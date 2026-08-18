@@ -3,7 +3,7 @@ import json
 import argparse
 import schedule
 from datetime import datetime
-from config import SCHEDULE_TIME, REFRESH_INTERVAL_MINUTES, LATEST_REPORT_PATH, HISTORY_REPORT_PATH
+from config import SCHEDULE_TIME, REFRESH_INTERVAL_MINUTES, LATEST_REPORT_PATH, HISTORY_REPORT_PATH, get_tw_now_str
 from data_service import MacroDataService
 from ai_translator import AITranslator
 from notifier import send_desktop_notification
@@ -18,7 +18,7 @@ def run_daily_macro_pipeline(send_notification: bool = True):
     4. 寫入本地快取 JSON 檔案
     5. 發送 Windows 桌面彈窗通知 (可依排程決定是否彈出)
     """
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now_str = get_tw_now_str('%Y-%m-%d %H:%M:%S')
     print(f"[{now_str}] 正在執行數據資料同步更新 (每 {REFRESH_INTERVAL_MINUTES} 分鐘自動更新)...")
 
     # 1. 抓取整合資料

@@ -2,7 +2,7 @@ import os
 import json
 import datetime
 from typing import Dict, Any
-from config import OPENAI_API_KEY, GEMINI_API_KEY
+from config import OPENAI_API_KEY, GEMINI_API_KEY, get_tw_now_str
 from prompt_template import LEGENDARY_TRADER_SYSTEM_PROMPT, build_user_prompt
 
 
@@ -101,7 +101,7 @@ class AITranslator:
         }
 
         return {
-            "summary_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "summary_date": get_tw_now_str("%Y-%m-%d %H:%M:%S"),
             "stance_tag": rating,
             "stance_color": color,
             "resonance_status": resonance["resonance_status"],

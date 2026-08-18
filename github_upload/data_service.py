@@ -2,7 +2,7 @@ import json
 import datetime
 from pathlib import Path
 from typing import Dict, Any, List
-from config import LATEST_REPORT_PATH, HISTORY_REPORT_PATH
+from config import LATEST_REPORT_PATH, HISTORY_REPORT_PATH, get_tw_now_str
 from sinopac_service import SinoPacDataService
 from swing_trading_screener import SwingTradingScreener
 from long_term_strategy_service import LongTermStrategyService
@@ -122,7 +122,7 @@ class MacroDataService:
             color_theme = "#FF5252"
 
         return {
-            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": get_tw_now_str("%Y-%m-%d %H:%M:%S"),
             "overall_score": overall_score,
             "overall_rating": overall_rating,
             "color_theme": color_theme,

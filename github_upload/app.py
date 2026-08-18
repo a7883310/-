@@ -18,7 +18,8 @@ from config import (
     SHIOAJI_API_KEY,
     SHIOAJI_SECRET_KEY,
     SHIOAJI_SIMULATION,
-    REFRESH_INTERVAL_MINUTES
+    REFRESH_INTERVAL_MINUTES,
+    get_tw_now_str
 )
 from scheduler_daemon import run_daily_macro_pipeline
 from notifier import send_desktop_notification
@@ -407,7 +408,7 @@ with st.sidebar:
         st.caption(f"💻 本機專屬網址：`http://localhost:8501`")
 
     st.markdown("---")
-    st.write(f"📅 **情報時間**:\n`{report.get('summary_date', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}`")
+    st.write(f"📅 **情報時間**:\n`{report.get('summary_date', get_tw_now_str('%Y-%m-%d %H:%M:%S'))}`")
     st.write(f"⏱️ **自動更新**: `每 {REFRESH_INTERVAL_MINUTES} 分鐘 (60秒即時同步)`")
     st.write(f"🛡️ **總體評級**: `{rating}`")
     st.write(f"🇹🇼 **台灣景氣**: `{tw_macro.get('signal_light', '紅燈 (41分)')}`")
@@ -1217,7 +1218,7 @@ with tab_sinopac:
 # =========================== TAB 3: 總經雷達與地緣戰報 ===========================
 with tab_macro:
     live_m = raw.get("live_macro_metrics", {})
-    live_time = raw.get("timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    live_time = raw.get("timestamp", get_tw_now_str("%Y-%m-%d %H:%M:%S"))
     
     st.markdown(f"### 🌐 全球總經 7 大宏觀雷達 × 地緣政治即時戰情報告")
     st.caption(f"🟢 **數據即時動態連線** ｜ 刷新頻率：**每 1 分鐘 (60秒) 自動同步** ｜ 最後更新時間：`{live_time}`")

@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, Tuple
+from config import get_tw_now_str
 
 
 def get_live_tw_stock_data(ticker: str) -> Optional[Dict[str, Any]]:
@@ -220,7 +221,7 @@ def get_live_macro_indicators() -> Dict[str, Any]:
         "gold": 4457.9,
         "sp500": 5850.0,
         "taiex": 23500.0,
-        "update_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "update_time": get_tw_now_str("%Y-%m-%d %H:%M:%S")
     }
     for key, sym in symbols.items():
         try:

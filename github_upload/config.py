@@ -1,6 +1,18 @@
 import os
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
+
+# 台灣標準時區 (Asia/Taipei, UTC+8)
+TW_TZ = timezone(timedelta(hours=8))
+
+def get_tw_now() -> datetime:
+    """取得台灣標準時間 (UTC+8)"""
+    return datetime.now(TW_TZ)
+
+def get_tw_now_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    """取得台灣標準時間字串 (UTC+8)"""
+    return datetime.now(TW_TZ).strftime(fmt)
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
