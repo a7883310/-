@@ -22,6 +22,7 @@ from config import (
 from scheduler_daemon import run_daily_macro_pipeline
 from notifier import send_desktop_notification
 from long_term_strategy_service import LongTermStrategyService
+from sinopac_service import SinoPacDataService
 try:
     from streamlit_autorefresh import st_autorefresh
 except ImportError:
