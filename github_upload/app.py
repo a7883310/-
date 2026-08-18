@@ -228,7 +228,7 @@ st.markdown(f"""
 
 def check_access_password() -> bool:
     """個人專屬私密通行碼安全防護 (杜絕未授權陌生人存取)"""
-    configured_pwd = str(getattr(config, "APP_PASSWORD", "6888"))
+    configured_pwd = str(getattr(config, "APP_PASSWORD", "a7883310"))
     if hasattr(st, "secrets") and "APP_PASSWORD" in st.secrets:
         configured_pwd = str(st.secrets["APP_PASSWORD"])
 
@@ -244,23 +244,23 @@ def check_access_password() -> bool:
     if st.session_state.get("_auth_verified", False):
         return True
 
-    # 渲染極簡安全鎖定登入畫面
+    # 渲染極簡安全鎖定登入畫面 (無任何密碼提示)
     st.markdown("""
     <div style="max-width: 520px; margin: 40px auto 20px auto; background: linear-gradient(145deg, #111827, #1e1b4b); border: 1px solid #4338ca; border-radius: 14px; padding: 28px 24px; text-align: center; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.7);">
         <div style="font-size: 2.8rem; margin-bottom: 8px;">🔐</div>
         <h3 style="color: #f8fafc; font-weight: 800; margin-bottom: 6px;">全球總經 × 投資戰情室</h3>
-        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.6; margin-bottom: 0;">本系統受專屬安全白名單通行碼保護<br>請輸入安全通行碼以解鎖您的專屬戰情報告。</p>
+        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.6; margin-bottom: 0;">本系統受個人安全密鑰防護<br>請輸入存取通行碼以解鎖您的專屬戰情報告。</p>
     </div>
     """, unsafe_allow_html=True)
 
     col_l, col_m, col_r = st.columns([1, 2, 1])
     with col_m:
         st.text_input(
-            "🔑 安全通行碼 (預設: 6888)",
+            "🔑 安全通行碼",
             type="password",
             on_change=on_pwd_submit,
             key="_pwd_input_box",
-            placeholder="請輸入解鎖通行碼..."
+            placeholder="請輸入通行碼..."
         )
         if st.button("🔓 驗證並解鎖進入", width="stretch", key="btn_unlock_war_room"):
             on_pwd_submit()
@@ -268,9 +268,9 @@ def check_access_password() -> bool:
                 st.rerun()
 
         if st.session_state.get("_pwd_error", False):
-            st.error("❌ 通行碼錯誤，存取已被阻擋！")
+            st.error("❌ 通行碼錯誤，存取已被拒絕！")
 
-        st.caption("🔒 提示：您可在 Streamlit Secrets 或 `.env` 中隨時自訂修改 `APP_PASSWORD`。")
+        st.caption("🔒 系統已啟用端對端隱私安全保護")
 
     return False
 

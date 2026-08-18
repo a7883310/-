@@ -35,6 +35,7 @@ WORLD_MONITOR_API_KEY = os.getenv("WORLD_MONITOR_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# 儀表板設定
+# 儀表板與安全存取通行碼
+APP_PASSWORD = os.getenv("APP_PASSWORD", "a7883310")
 DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8501"))
 DASHBOARD_URL = f"http://localhost:{DASHBOARD_PORT}"
