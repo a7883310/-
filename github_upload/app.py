@@ -226,25 +226,52 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
+import hashlib
+
+
+def get_secure_auth_token(password: str) -> str:
+    """計算安全授權 Token (SHA-256)"""
+    return hashlib.sha256(f"warroom_token_{password}_2026".encode()).hexdigest()[:20]
+
+
 def check_access_password() -> bool:
-    """個人專屬私密通行碼安全防護 (杜絕未授權陌生人存取)"""
+    """個人專屬私密通行碼安全防護 (支援記憶登入，重新整理免重複輸入)"""
     configured_pwd = str(getattr(config, "APP_PASSWORD", "a7883310"))
     if hasattr(st, "secrets") and "APP_PASSWORD" in st.secrets:
         configured_pwd = str(st.secrets["APP_PASSWORD"])
+
+    valid_token = get_secure_auth_token(configured_pwd)
+
+    # 1. 優先檢查 URL 網址參數是否已持有記憶登入 Token (F5 重新整理 / 重開分頁皆免輸入)
+    current_token = None
+    if hasattr(st, "query_params"):
+        current_token = st.query_params.get("auth")
+    elif hasattr(st, "experimental_get_query_params"):
+        current_token = st.experimental_get_query_params().get("auth", [None])[0]
+
+    if current_token == valid_token:
+        st.session_state["_auth_verified"] = True
+        return True
+
+    # 2. 檢查目前 Session 狀態 (每分鐘自動刷新時維持登入)
+    if st.session_state.get("_auth_verified", False):
+        return True
 
     def on_pwd_submit():
         user_input = st.session_state.get("_pwd_input_box", "").strip()
         if user_input == configured_pwd:
             st.session_state["_auth_verified"] = True
             st.session_state["_pwd_error"] = False
+            # 自動寫入安全 Token 至網址參數，記住登入狀態
+            if hasattr(st, "query_params"):
+                st.query_params["auth"] = valid_token
+            elif hasattr(st, "experimental_set_query_params"):
+                st.experimental_set_query_params(auth=valid_token)
         else:
             st.session_state["_auth_verified"] = False
             st.session_state["_pwd_error"] = True
 
-    if st.session_state.get("_auth_verified", False):
-        return True
-
-    # 渲染極簡安全鎖定登入畫面 (無任何密碼提示)
+    # 渲染極簡安全鎖定登入畫面
     st.markdown("""
     <div style="max-width: 520px; margin: 40px auto 20px auto; background: linear-gradient(145deg, #111827, #1e1b4b); border: 1px solid #4338ca; border-radius: 14px; padding: 28px 24px; text-align: center; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.7);">
         <div style="font-size: 2.8rem; margin-bottom: 8px;">🔐</div>
@@ -270,7 +297,7 @@ def check_access_password() -> bool:
         if st.session_state.get("_pwd_error", False):
             st.error("❌ 通行碼錯誤，存取已被拒絕！")
 
-        st.caption("🔒 系統已啟用端對端隱私安全保護")
+        st.caption("🔒 系統已啟用端對端隱私安全保護 (驗證後自動記住登入狀態)")
 
     return False
 
@@ -278,6 +305,7 @@ def check_access_password() -> bool:
 # 若尚未驗證通過，立即中斷後續所有敏感數據與策略加載
 if not check_access_password():
     st.stop()
+
 
 
 # 每 60 秒自動高頻刷新畫面 (1 分鐘)
@@ -434,6 +462,14 @@ with st.sidebar:
         )
         st.session_state["alert_msg"] = ("info", f"🔔 [{now_str}] 已成功觸發 Windows 桌面彈窗推播！請查看右下角通知中心。")
         st.toast("🔔 已發送系統桌面通知！請查看電腦右下角", icon="🔔")
+        st.rerun()
+
+    if st.button("🚪 鎖定並登出戰情室", width="stretch", key="btn_logout_action"):
+        if hasattr(st, "query_params"):
+            st.query_params.clear()
+        elif hasattr(st, "experimental_set_query_params"):
+            st.experimental_set_query_params()
+        st.session_state["_auth_verified"] = False
         st.rerun()
 
     if st.session_state["alert_msg"]:
