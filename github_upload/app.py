@@ -285,34 +285,18 @@ with st.sidebar:
     st.caption("50年華爾街征戰心法 × 長期價值投資 × 高動能波段")
     st.markdown("---")
 
-    # ================= 📱 手機同步觀看 QR Code 專區 =================
-    st.subheader("📱 手機同步觀看")
-    
-    # 檢查是否有 Cloudflare 遠端連線網址
-    cf_file = Path(__file__).parent / "data" / "cloudflare_url.txt"
-    cf_url = None
-    if cf_file.exists():
-        try:
-            with open(cf_file, "r", encoding="utf-8") as f:
-                cf_url = f.read().strip()
-        except Exception:
-            pass
+    # ================= 📱 24H 雲端手機同步觀看 QR Code =================
+    st.subheader("📱 手機隨身看 (24H 雲端不關機)")
+    cloud_url = "https://aichinga00.streamlit.app"
 
-    with st.expander("點擊展開手機 QR Code 與網址", expanded=True):
-        if cf_url:
-            st.success("🟢 **Cloudflare 外出安全通道已連線**")
-            st.caption("出門在外（4G/5G）請用手機相機掃描下方條碼：")
-            qr_cf = generate_qr_image(cf_url)
-            st.image(qr_cf, caption="🌐 外出 4G/5G 專用 QR Code", width=180)
-            st.code(cf_url, language="text")
-            st.markdown("---")
-            st.caption(f"🏠 家中/公司 Wi-Fi 內網網址：`{mobile_url}`")
-        else:
-            st.caption("🏠 **家中/公司同 Wi-Fi 觀看**：")
-            qr_img = generate_qr_image(mobile_url)
-            st.image(qr_img, caption="📱 手機相機掃描即刻開啟", width=180)
-            st.code(mobile_url, language="text")
-            st.info("💡 若要**出門在外用 4G/5G 觀看**，請在專案資料夾執行 `開啟外出手機連線(Cloudflare).bat` 即可！")
+    with st.expander("點擊展開專屬 QR Code 與網址", expanded=True):
+        st.success("🟢 **24H 雲端專屬網址已就緒**")
+        st.caption("出門在外或電腦關機時，用手機相機掃描下方條碼：")
+        qr_cloud = generate_qr_image(cloud_url)
+        st.image(qr_cloud, caption="🌐 24H 雲端專屬 QR Code", width=180)
+        st.code(cloud_url, language="text")
+        st.markdown("---")
+        st.caption(f"💻 本機專屬網址：`http://localhost:8501`")
 
     st.markdown("---")
     st.write(f"📅 **情報時間**:\n`{report.get('summary_date', datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}`")
