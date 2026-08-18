@@ -101,7 +101,7 @@ class AITranslator:
         }
 
         return {
-            "summary_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "summary_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "stance_tag": rating,
             "stance_color": color,
             "resonance_status": resonance["resonance_status"],

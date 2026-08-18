@@ -1,6 +1,7 @@
 import json
 import os
 import io
+import time
 import socket
 import datetime
 from pathlib import Path
@@ -307,7 +308,11 @@ if st_autorefresh is not None:
 
 
 def load_report_data():
-    """載入最新戰報資料 (自動感應每分鐘磁碟新戰報與即時刷新)"""
+    """載入最新戰報資料 (自動感應每分鐘更新，雲端與本地端全自動高頻即時重新運算)"""
+    now_ts = time.time()
+    last_calc_ts = st.session_state.get("_last_pipeline_run_ts", 0)
+    is_expired = (now_ts - last_calc_ts) >= (REFRESH_INTERVAL_MINUTES * 60)
+
     file_mtime = 0
     if LATEST_REPORT_PATH.exists():
         try:
@@ -317,23 +322,35 @@ def load_report_data():
 
     last_loaded_mtime = st.session_state.get("_last_report_mtime", 0)
 
-    # 若磁碟檔案有更新，或 session_state 無資料，直接重載磁碟檔案
-    if file_mtime > last_loaded_mtime or "current_report" not in st.session_state or not st.session_state["current_report"]:
-        if LATEST_REPORT_PATH.exists():
-            try:
+    # 1. 若本機背景 Daemon 寫入最新檔案且尚未過期，優先直接讀取磁碟快取
+    if file_mtime > last_loaded_mtime and (now_ts - file_mtime) < (REFRESH_INTERVAL_MINUTES * 60):
+        try:
+            with open(LATEST_REPORT_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                st.session_state["current_report"] = data
+                st.session_state["_last_report_mtime"] = file_mtime
+                st.session_state["_last_pipeline_run_ts"] = file_mtime
+                return data
+        except Exception:
+            pass
+
+    # 2. 若資料已超過 60 秒過期，或 session 中尚無資料，主動執行全套高頻運算流水線
+    if is_expired or "current_report" not in st.session_state or not st.session_state["current_report"]:
+        try:
+            fresh = run_daily_macro_pipeline(send_notification=False)
+            st.session_state["current_report"] = fresh
+            st.session_state["_last_pipeline_run_ts"] = now_ts
+            st.session_state["_last_report_mtime"] = now_ts
+            return fresh
+        except Exception as e:
+            if "current_report" in st.session_state and st.session_state["current_report"]:
+                return st.session_state["current_report"]
+            if LATEST_REPORT_PATH.exists():
                 with open(LATEST_REPORT_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    st.session_state["current_report"] = data
-                    st.session_state["_last_report_mtime"] = file_mtime
-                    return data
-            except Exception:
-                pass
-        fresh = run_daily_macro_pipeline(send_notification=False)
-        st.session_state["current_report"] = fresh
-        st.session_state["_last_report_mtime"] = file_mtime if file_mtime > 0 else 1
-        return fresh
+                    return json.load(f)
 
     return st.session_state["current_report"]
+
 
 
 # 初始化 Session State
@@ -390,8 +407,8 @@ with st.sidebar:
         st.caption(f"💻 本機專屬網址：`http://localhost:8501`")
 
     st.markdown("---")
-    st.write(f"📅 **情報時間**:\n`{report.get('summary_date', datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))}`")
-    st.write(f"⏱️ **自動更新**: `每 {REFRESH_INTERVAL_MINUTES} 分鐘`")
+    st.write(f"📅 **情報時間**:\n`{report.get('summary_date', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}`")
+    st.write(f"⏱️ **自動更新**: `每 {REFRESH_INTERVAL_MINUTES} 分鐘 (60秒即時同步)`")
     st.write(f"🛡️ **總體評級**: `{rating}`")
     st.write(f"🇹🇼 **台灣景氣**: `{tw_macro.get('signal_light', '紅燈 (41分)')}`")
     st.write(f"⚡ **波段鎖定**: `{len(tw_swing_stocks)} 檔台股 + {len(us_sub_stocks)} 檔複委託`")
