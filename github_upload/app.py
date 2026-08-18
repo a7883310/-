@@ -66,9 +66,8 @@ def generate_qr_image(url: str) -> Image.Image:
     return qr.make_image(fill_color='#10b981', back_color='#0b0f19').convert('RGB')
 
 
-# 注入 5 分鐘自動刷新 HTML Meta (300 秒) 與深色終端主題 CSS
+# 移除會導致瀏覽器硬重載中斷 session 的 HTML Meta Refresh，專注採用 Streamlit WebSocket 高頻動態刷新
 st.markdown(f"""
-<meta http-equiv="refresh" content="{REFRESH_INTERVAL_MINUTES * 60}">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
     /* 全域背景與字體 */
@@ -77,6 +76,7 @@ st.markdown(f"""
         color: #e2e8f0;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }}
+
     
     /* 頂部戰情報告卡片 */
     .war-room-header {{
@@ -242,34 +242,20 @@ def check_access_password() -> bool:
 
     valid_token = get_secure_auth_token(configured_pwd)
 
-    # 1. 優先檢查 URL 網址參數是否已持有記憶登入 Token (F5 重新整理 / 重開分頁皆免輸入)
-    current_token = None
+    # 1. 檢查 URL 網址參數是否持有有效 Token (F5 重新整理 / 分頁重開皆永久保持登入)
+    url_token = None
     if hasattr(st, "query_params"):
-        current_token = st.query_params.get("auth")
+        url_token = st.query_params.get("auth")
     elif hasattr(st, "experimental_get_query_params"):
-        current_token = st.experimental_get_query_params().get("auth", [None])[0]
+        url_token = st.experimental_get_query_params().get("auth", [None])[0]
 
-    if current_token == valid_token:
+    if url_token == valid_token:
         st.session_state["_auth_verified"] = True
         return True
 
-    # 2. 檢查目前 Session 狀態 (每分鐘自動刷新時維持登入)
+    # 2. 檢查目前 Session 狀態 (每分鐘 WebSocket 動態刷新時維持登入)
     if st.session_state.get("_auth_verified", False):
         return True
-
-    def on_pwd_submit():
-        user_input = st.session_state.get("_pwd_input_box", "").strip()
-        if user_input == configured_pwd:
-            st.session_state["_auth_verified"] = True
-            st.session_state["_pwd_error"] = False
-            # 自動寫入安全 Token 至網址參數，記住登入狀態
-            if hasattr(st, "query_params"):
-                st.query_params["auth"] = valid_token
-            elif hasattr(st, "experimental_set_query_params"):
-                st.experimental_set_query_params(auth=valid_token)
-        else:
-            st.session_state["_auth_verified"] = False
-            st.session_state["_pwd_error"] = True
 
     # 渲染極簡安全鎖定登入畫面
     st.markdown("""
@@ -282,22 +268,28 @@ def check_access_password() -> bool:
 
     col_l, col_m, col_r = st.columns([1, 2, 1])
     with col_m:
-        st.text_input(
-            "🔑 安全通行碼",
-            type="password",
-            on_change=on_pwd_submit,
-            key="_pwd_input_box",
-            placeholder="請輸入通行碼..."
-        )
-        if st.button("🔓 驗證並解鎖進入", width="stretch", key="btn_unlock_war_room"):
-            on_pwd_submit()
-            if st.session_state.get("_auth_verified", False):
-                st.rerun()
+        with st.form(key="war_room_login_form"):
+            pwd_input = st.text_input(
+                "🔑 安全通行碼",
+                type="password",
+                placeholder="請輸入通行碼..."
+            )
+            submit_btn = st.form_submit_button("🔓 驗證並解鎖進入 (自動記住)", width="stretch")
+            
+            if submit_btn:
+                if pwd_input.strip() == configured_pwd:
+                    st.session_state["_auth_verified"] = True
+                    st.session_state["_pwd_error"] = False
+                    if hasattr(st, "query_params"):
+                        st.query_params["auth"] = valid_token
+                    elif hasattr(st, "experimental_set_query_params"):
+                        st.experimental_set_query_params(auth=valid_token)
+                    st.rerun()
+                else:
+                    st.session_state["_pwd_error"] = True
+                    st.error("❌ 通行碼錯誤，存取已被拒絕！")
 
-        if st.session_state.get("_pwd_error", False):
-            st.error("❌ 通行碼錯誤，存取已被拒絕！")
-
-        st.caption("🔒 系統已啟用端對端隱私安全保護 (驗證後自動記住登入狀態)")
+        st.caption("🔒 系統已啟用端對端安全記憶保護 (登入後將自動保持連線)")
 
     return False
 
