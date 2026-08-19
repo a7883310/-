@@ -24,6 +24,7 @@ from config import (
 from scheduler_daemon import run_daily_macro_pipeline
 from notifier import send_desktop_notification
 from long_term_strategy_service import LongTermStrategyService
+from position_tracking_service import PositionTrackingService
 from sinopac_service import SinoPacDataService
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -380,8 +381,9 @@ swing_stocks = swing_data.get("stocks", [])
 tw_swing_stocks = swing_data.get("tw_stocks", [])
 us_sub_stocks = swing_data.get("us_sub_stocks", [])
 
-# 長期投資服務
+# 長期投資與持股風控導航服務
 long_term_service = LongTermStrategyService()
+pos_tracking_service = PositionTrackingService()
 
 # 若無拆分則從 all stocks 依市場屬性區分
 if not tw_swing_stocks and swing_stocks:
@@ -414,9 +416,22 @@ with st.sidebar:
     st.write(f"🇹🇼 **台灣景氣**: `{tw_macro.get('signal_light', '紅燈 (41分)')}`")
     st.write(f"⚡ **波段鎖定**: `{len(tw_swing_stocks)} 檔台股 + {len(us_sub_stocks)} 檔複委託`")
 
+    # ================= 💼 我的永豐金庫存速查 =================
+    pos_sum_side = pos_tracking_service.get_all_positions_summary()
+    st.markdown("---")
+    st.subheader("💼 我的在庫持股庫存")
+    st.write(f"📊 **持股總數**: `{pos_sum_side['positions_count']} 檔`")
+    st.write(f"🇹🇼 **台股損益**: `NT$ {pos_sum_side['total_profit_twd']:,} ({pos_sum_side['total_roi_twd']}%)`")
+    st.write(f"🇺🇸 **美股損益**: `$ {pos_sum_side['total_profit_usd']:,} USD ({pos_sum_side['total_roi_usd']}%)`")
+    if st.button("🔄 立即同步永豐金庫存", width="stretch", key="btn_side_sync_pos"):
+        cnt, msg = pos_tracking_service.sync_from_sinopac_api()
+        st.toast(f"永豐金庫存同步完成：{msg}", icon="💼")
+        st.rerun()
+
     # ================= 永豐金證券 API 與 CA 憑證設定 =================
     st.markdown("---")
     st.subheader("🔐 永豐金 API 與 CA 憑證")
+
     
     with st.expander("點擊設定 API 金鑰與交易憑證", expanded=not bool(SHIOAJI_API_KEY)):
         input_api_key = st.text_input("API Key", value=SHIOAJI_API_KEY, type="password", help="請輸入永豐金證券核發之 API Key")
@@ -720,18 +735,45 @@ def render_stock_card(s: dict, idx: int):
                 </div>
                 """, unsafe_allow_html=True)
             
-            st.markdown("---")
-            st.markdown("##### 🏛️ 本標的引據之權威可信來源白名單 (Trusted Sources)：")
-            for src in sources:
-                st.markdown(f"- **[{src['category']}]** [{src['name']}]({src['url']})")
+        st.markdown("---")
+        with st.expander(f"🛒 我已買入 {s['name']}（登記我的買入成本價，啟動 5~7 天進出場導航）", expanded=False):
+            st.caption("輸入您的實際買進價格與股數，系統將自動為您精算【個人專屬停利停損點】與【5~7天持股倒數計時】：")
+            reg_c1, reg_c2, reg_c3, reg_c4 = st.columns(4)
+            with reg_c1:
+                cur_p = float(s.get('current_price', 100.0))
+                reg_cost = st.number_input("買入成本單價", value=cur_p, step=1.0 if not is_us else 0.1, key=f"inp_reg_c_{s['ticker']}_{idx}")
+            with reg_c2:
+                default_shares = 100 if not is_us else 10
+                reg_shares = st.number_input("買入股數 (零股/整張)", value=default_shares, min_value=1, step=10, key=f"inp_reg_sh_{s['ticker']}_{idx}")
+            with reg_c3:
+                reg_buy_date = st.date_input("買入日期", value=get_tw_now().date(), key=f"inp_reg_d_{s['ticker']}_{idx}").strftime("%Y-%m-%d")
+            with reg_c4:
+                st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+                if st.button("📌 確認登記至我的波段持股", key=f"btn_confirm_reg_{s['ticker']}_{idx}", width="stretch"):
+                    pos_tracking_service.add_or_update_position(
+                        ticker=s['ticker'],
+                        name=s['name'],
+                        market=s.get('market', 'TW'),
+                        currency=s.get('currency', 'TWD'),
+                        cost_price=float(reg_cost),
+                        shares=int(reg_shares),
+                        buy_date=reg_buy_date,
+                        target_gain_pct=float(ch1.get('target_gain_pct', 10.0)),
+                        stop_loss_pct=float(ch1.get('stop_loss_pct', 4.0)),
+                        strategy_note=f"5~7天高動能波段 ({s['sector']})"
+                    )
+                    st.success(f"✅ 已成功登記 {s['name']} ({s['ticker']}) 買入成本 {curr_sym}{reg_cost}！請至上方【我的永豐金波段持股】查看即時風控導航。")
+                    st.toast(f"✅ 已登記 {s['ticker']} 至我的波段持股！", icon="🎯")
+                    st.rerun()
 
         st.write("")
 
 
 # =========================== 分頁導覽 ===========================
-tab_long_term, tab_swing, tab_sinopac, tab_macro, tab_industry, tab_stocks, tab_history = st.tabs([
-    "🏛️ 【長期價值投資與定期定額策略 (自訂標的)】",
-    "⚡ 【5~7天高動能波段交易 (台股+複委託)】",
+tab_portfolio, tab_long_term, tab_swing, tab_sinopac, tab_macro, tab_industry, tab_stocks, tab_history = st.tabs([
+    "💼 【我的永豐金庫存持股與進出場風控中樞】",
+    "🏛️ 【長期價值投資與定期定額 (自訂標的)】",
+    "⚡ 【5~7天高動能波段推薦 (台美股)】",
     "🏛️ 【永豐金證券 即時台股雷達 (Shioaji)】",
     "🌐 【總經雷達與地緣戰報】",
     "🏭 【工研院 IEK 產業趨勢 × 台灣景氣】",
@@ -739,10 +781,227 @@ tab_long_term, tab_swing, tab_sinopac, tab_macro, tab_industry, tab_stocks, tab_
     "📈 【歷史走勢與數據監控】"
 ])
 
-# =========================== TAB 0: 長期價值投資與定期定額策略 (自訂標的) ===========================
+# =========================== TAB 0: 我的永豐金庫存持股與進出場風控中樞 ===========================
+with tab_portfolio:
+    st.markdown("### 💼 我的永豐金庫存持股與個人化進出場風控中樞 (SinoPac Portfolio Radar)")
+    st.caption("連線永豐金證券 Shioaji 庫存部位 ｜ 依買入成本精算【+8% / +15% 停利目標】與【-4% 硬性防守停損】 ｜ 5~7 天波段時效倒數導航")
+
+    pos_summary = pos_tracking_service.get_all_positions_summary()
+    active_positions = pos_summary.get("positions", [])
+
+    # 4 大庫存核心 KPI 總覽
+    pk1, pk2, pk3, pk4 = st.columns(4)
+    pk1.metric("💼 在庫持股總檔數", f"{pos_summary['positions_count']} 檔", "持股集中 2~4 檔最佳")
+    
+    twd_profit = pos_summary['total_profit_twd']
+    twd_roi = pos_summary['total_roi_twd']
+    twd_sym = "▲" if twd_profit >= 0 else "▼"
+    pk2.metric(
+        "🇹🇼 台股持股市值與損益",
+        f"NT$ {pos_summary['total_market_twd']:,}",
+        f"{twd_sym} NT$ {abs(twd_profit):,} ({twd_roi}%)"
+    )
+
+    usd_profit = pos_summary['total_profit_usd']
+    usd_roi = pos_summary['total_roi_usd']
+    usd_sym = "▲" if usd_profit >= 0 else "▼"
+    pk3.metric(
+        "🇺🇸 美股複委託市值與損益",
+        f"$ {pos_summary['total_market_usd']:,} USD",
+        f"{usd_sym} $ {abs(usd_profit):,} ({usd_roi}%)"
+    )
+
+    pk4.metric("⚖️ 操盤紀律目標", "5 ~ 7 天高週轉", "風報比 >= 1:2.5")
+
+    st.markdown("---")
+
+    # 1. 永豐金證券 API 實盤庫存自動讀取區塊
+    with st.container(border=True):
+        st.markdown("#### 🔄 永豐金證券 Shioaji API 庫存讀取與同步中樞")
+        st.caption("系統將直接連線永豐金證券伺服器，自動抓取您的台股證券帳號 (`9A61-9802236`) 與複委託海外帳號 (`9A61-09800879`) 之即時股票庫存：")
+        
+        sync_c1, sync_c2 = st.columns([2, 3])
+        with sync_c1:
+            if st.button("🚀 立即讀取 / 同步永豐金證券庫存", key="btn_sync_shioaji_main_tab", width="stretch"):
+                with st.spinner("正在向永豐金證券伺服器查詢庫存部位..."):
+                    cnt, msg = pos_tracking_service.sync_from_sinopac_api()
+                    if cnt > 0:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.info(f"ℹ️ {msg}")
+        with sync_c2:
+            st.caption("💡 提示：若目前為模擬帳號或實盤尚未成交，您亦可在下方「➕ 手動登記 / 匯入持股」隨時新增您的持股成本。")
+
+    # 2. 手動新增 / 匯入庫存管理面板
+    with st.expander("➕ 手動登記新買入持股 / 調整成本單價 (點擊展開)", expanded=not bool(active_positions)):
+        st.markdown("##### 登記您在永豐金買入的股票或 ETF：")
+        with st.form(key="form_add_manual_pos_main"):
+            mf_c1, mf_c2, mf_c3 = st.columns(3)
+            with mf_c1:
+                m_tk = st.text_input("股票代號", placeholder="例如: 2330, 2454, 006208, VTI, NVDA").strip().upper()
+            with mf_c2:
+                m_name = st.text_input("股票名稱", placeholder="例如: 台積電, 聯發科, 輝達").strip()
+            with mf_c3:
+                m_mkt = st.selectbox("市場類別", ["TW (台股現股/零股)", "US_SUB (永豐金複委託美股)"])
+            
+            mf_d1, mf_d2, mf_d3 = st.columns(3)
+            with mf_d1:
+                m_cost = st.number_input("買入成交單價", min_value=0.01, value=100.0, step=1.0)
+            with mf_d2:
+                m_shares = st.number_input("持有股數 (支援零股如 100 股或整張 1000 股)", min_value=1, value=100, step=10)
+            with mf_d3:
+                m_date = st.date_input("買入日期", value=get_tw_now().date()).strftime("%Y-%m-%d")
+            
+            m_submit = st.form_submit_button("💾 確認儲存並啟動個人進出場風控導航", width="stretch")
+            if m_submit:
+                if m_tk:
+                    is_tw = "TW" in m_mkt
+                    pos_tracking_service.add_or_update_position(
+                        ticker=m_tk,
+                        name=m_name if m_name else m_tk,
+                        market="TW" if is_tw else "US_SUB",
+                        currency="TWD" if is_tw else "USD",
+                        cost_price=float(m_cost),
+                        shares=int(m_shares),
+                        buy_date=m_date,
+                        target_gain_pct=10.0,
+                        stop_loss_pct=4.0,
+                        strategy_note="永豐金持股風控中樞"
+                    )
+                    st.success(f"✅ 已成功將 {m_tk} 納入持股庫存並啟動進出場導航！")
+                    st.rerun()
+                else:
+                    st.warning("請填寫股票代號！")
+
+    st.markdown("---")
+
+    # 3. 庫存持股量化總覽表格 (Data Table View)
+    if active_positions:
+        st.markdown("#### 📋 在庫持股量化總覽表 (全方位損益與進出場點位一覽)：")
+        table_rows = []
+        for pos in active_positions:
+            p_sym = pos["curr_sym"]
+            roi = pos["roi_pct"]
+            roi_str = f"+{roi}%" if roi >= 0 else f"{roi}%"
+            profit_str = f"+{p_sym}{pos['profit_val']:,}" if pos['profit_val'] >= 0 else f"-{p_sym}{abs(pos['profit_val']):,}"
+            
+            table_rows.append({
+                "代號": pos["ticker"],
+                "股票名稱": pos["name"],
+                "市場": "🇹🇼 台股" if pos["currency"] == "TWD" else "🇺🇸 複委託",
+                "買入成本": f"{p_sym}{pos['cost_price']}",
+                "即時現價": f"{p_sym}{pos['curr_price']}",
+                "持有股數": f"{pos['shares']:,}",
+                "投入總成本": f"{p_sym}{pos['cost_total']:,}",
+                "目前市值": f"{p_sym}{pos['market_val']:,}",
+                "未實現損益": profit_str,
+                "報酬率 (ROI)": roi_str,
+                "第1停利 (+8%)": f"{p_sym}{pos['tp1_price']}",
+                "第2停利 (+15%)": f"{p_sym}{pos['tp2_price']}",
+                "硬性停損 (-4%)": f"{p_sym}{pos['sl_price']}",
+                "持股天數": f"第 {pos['held_days']} 天",
+                "風控狀態": pos["status_badge"].split(" (")[0]
+            })
+        
+        df_pos = pd.DataFrame(table_rows)
+        st.dataframe(df_pos, width="stretch", hide_index=True)
+
+        st.markdown("---")
+        st.markdown("#### 🧭 每檔持股之【專屬 5~7 天進出場導航大卡片】：")
+
+        for p_idx, pos in enumerate(active_positions):
+            p_sym = pos["curr_sym"]
+            p_unit = pos["currency"]
+            roi = pos["roi_pct"]
+            roi_color = "#10b981" if roi >= 0 else "#ef4444"
+            roi_sym = "▲" if roi >= 0 else "▼"
+
+            with st.container(border=True):
+                # 卡片頂部
+                h_c1, h_c2 = st.columns([3, 2])
+                with h_c1:
+                    mkt_tag = "🇹🇼 永豐金台股" if pos["currency"] == "TWD" else "🇺🇸 永豐金複委託"
+                    st.markdown(f"#### 📌 **{pos['name']}** (`{pos['ticker']}`) ｜ {mkt_tag}")
+                    st.caption(f"📅 買入日期：`{pos['buy_date']}` ｜ 持有股數：**{pos['shares']:,} 股** ｜ 來源：`{pos['source']}`")
+                with h_c2:
+                    st.markdown(f"""
+                    <div style="text-align:right;">
+                        <span style="background-color:#1e1b4b; color:{pos['status_color']}; border:1px solid {pos['status_color']}; padding:4px 10px; border-radius:6px; font-weight:800; font-size:0.92rem;">
+                            {pos['status_badge']}
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # 即時現價 vs 買入成本價橫幅
+                st.markdown(f"""
+                <div style="background-color:#0f172a; border:1px solid #334155; border-radius:8px; padding:12px 16px; margin:10px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                    <div>
+                        <span style="font-size:0.82rem; color:#94a3b8;">您的買入成本均價</span><br>
+                        <span style="font-size:1.35rem; font-weight:800; color:#f8fafc;">{p_sym}{pos['cost_price']} {p_unit}</span>
+                        <span style="font-size:0.8rem; color:#64748b;">(總成本: {p_sym}{pos['cost_total']:,})</span>
+                    </div>
+                    <div style="font-size:1.5rem; color:#6366f1; font-weight:800;">➔</div>
+                    <div>
+                        <span style="font-size:0.82rem; color:#94a3b8;">即時市場現價</span><br>
+                        <span style="font-size:1.35rem; font-weight:800; color:#60a5fa;">{p_sym}{pos['curr_price']} {p_unit}</span>
+                        <span style="font-size:0.8rem; color:#64748b;">(今日: {pos['day_change_pct']}%)</span>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="font-size:0.82rem; color:#94a3b8;">未實現帳面損益 (ROI)</span><br>
+                        <span style="font-size:1.45rem; font-weight:900; color:{roi_color};">{roi_sym} {p_sym}{abs(pos['profit_val']):,} ({roi}%)</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # 4 大個人化進出場點位導航方塊
+                g_c1, g_c2, g_c3, g_c4 = st.columns(4)
+                with g_c1:
+                    with st.container(border=True):
+                        st.markdown("<div style='font-size:0.75rem; color:#6ee7b7; font-weight:700;'>🎯 第 1 停利目標 (+8%)</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:1.2rem; font-weight:800; color:#10b981;'>{p_sym}{pos['tp1_price']}</div>", unsafe_allow_html=True)
+                        st.caption(f"獲利：+{p_sym}{pos['tp1_profit']:,}\n\n**戰術：出清 50% 鎖定勝局**")
+                
+                with g_c2:
+                    with st.container(border=True):
+                        st.markdown("<div style='font-size:0.75rem; color:#93c5fd; font-weight:700;'>🚀 第 2 停利目標 (+12~15%)</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:1.2rem; font-weight:800; color:#60a5fa;'>{p_sym}{pos['tp2_price']}</div>", unsafe_allow_html=True)
+                        st.caption(f"獲利：+{p_sym}{pos['tp2_profit']:,}\n\n**戰術：全數出清獲利落袋**")
+
+                with g_c3:
+                    with st.container(border=True):
+                        st.markdown("<div style='font-size:0.75rem; color:#fca5a5; font-weight:700;'>🛑 硬性防守停損點 (-4%)</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:1.2rem; font-weight:800; color:#ef4444;'>{p_sym}{pos['sl_price']}</div>", unsafe_allow_html=True)
+                        st.caption(f"虧損限制：-{p_sym}{pos['sl_loss_val']:,}\n\n**戰術：跌破無條件停損**")
+
+                with g_c4:
+                    with st.container(border=True):
+                        st.markdown("<div style='font-size:0.75rem; color:#fdba74; font-weight:700;'>⏱️ 5~7 天波段時效倒數</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:1.2rem; font-weight:800; color:#f97316;'>第 {pos['held_days']} 天 / 剩 {pos['remaining_days']} 天</div>", unsafe_allow_html=True)
+                        st.caption("波段週期：5~7 個交易日\n\n**滿期未發動即時間停損**")
+
+                # 操盤手當前行動指令
+                st.markdown(f"""
+                <div style="background:linear-gradient(90deg, #1e1b4b 0%, #0f172a 100%); border-left:4px solid {pos['status_color']}; padding:10px 14px; border-radius:6px; margin:8px 0; font-size:0.92rem; color:#f1f5f9;">
+                    🗣️ <b>操盤手當前戰術指示</b>：{pos['action_advice']}
+                </div>
+                """, unsafe_allow_html=True)
+
+                # 平倉結案操作按鈕
+                del_c1, del_c2 = st.columns([4, 1])
+                with del_c2:
+                    if st.button("🗑️ 平倉結案 / 移除", key=f"btn_del_pos_main_{pos['ticker']}_{p_idx}", width="stretch"):
+                        pos_tracking_service.remove_position(pos['ticker'])
+                        st.success(f"已平倉結案並自庫存移除 {pos['name']} ({pos['ticker']})！")
+                        st.rerun()
+    else:
+        st.info("ℹ️ 目前尚未讀取到永豐金持股庫存。您可以點擊上方「🚀 立即讀取 / 同步永豐金證券庫存」，或在「➕ 手動登記新買入持股」輸入您的買進標的與成本！")
+
+# =========================== TAB 1: 長期價值投資與定期定額策略 (自訂標的) ===========================
 with tab_long_term:
     st.markdown("### 🏛️ 長期價值投資與定期定額 (DCA) 量化分析引擎")
     st.caption("支援輸入任意台股個股/ETF、美股複委託個股/ETF ｜ 評估 3~5 年經濟護城河 ｜ 精算三大估值加碼區間 ｜ 擬定金字塔分批建倉戰術")
+
 
     # 1. 搜尋與自訂輸入區塊
     search_col1, search_col2 = st.columns([3, 1])
@@ -1142,6 +1401,11 @@ with tab_swing:
     kpi4.metric("⚖️ 最低風報比要求", ">= 1 : 2.5", "不對市場妥協")
 
     st.markdown("---")
+
+    st.info("💡 **波段操作提示**：當您在下方推薦清單中買入任何標的後，點擊該卡片底部的 **「🛒 我已買入此標的」** 登記您的成交價格，即可在第一個分頁 **【💼 我的永豐金庫存持股與進出場風控中樞】** 啟動專屬的停利停損點位與 5~7 天時效倒數！")
+    st.markdown("---")
+
+
 
     sub_tab_us, sub_tab_tw, sub_tab_all = st.tabs([
         f"🇺🇸 永豐金複委託美股主力波段 ({len(us_sub_stocks)} 檔)",

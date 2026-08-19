@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "2454",
+    "name": "聯發科",
+    "market": "TW",
+    "currency": "TWD",
+    "cost_price": 1380.0,
+    "shares": 100,
+    "buy_date": "2026-08-17",
+    "target_gain_pct": 10.5,
+    "stop_loss_pct": 4.0,
+    "target_strategy": "5~7天高動能波段 (ASIC 晶片催化)",
+    "source": "手動登記"
+  },
+  {
+    "ticker": "NVDA",
+    "name": "輝達 (NVIDIA)",
+    "market": "US_SUB",
+    "currency": "USD",
+    "cost_price": 178.5,
+    "shares": 10,
+    "buy_date": "2026-08-16",
+    "target_gain_pct": 12.0,
+    "stop_loss_pct": 4.5,
+    "target_strategy": "5~7天高動能波段 (Blackwell 伺服器放量)",
+    "source": "手動登記"
+  }
+]
