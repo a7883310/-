@@ -231,28 +231,19 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-import hashlib
+from whitelist_service import AccessWhitelistService, generate_user_token
+
+whitelist_svc = AccessWhitelistService()
 
 
 def get_secure_auth_token(password: str) -> str:
     """計算安全授權 Token (SHA-256)"""
-    return hashlib.sha256(f"warroom_token_{password}_2026".encode()).hexdigest()[:20]
+    return generate_user_token(password)
+
 
 
 def check_access_password() -> bool:
-    """個人專屬私密通行碼安全防護 (支援記憶登入，重新整理免重複輸入)"""
-    configured_pwd = str(getattr(config, "APP_PASSWORD", "a7883310"))
-
-
-    try:
-        if hasattr(st, "secrets") and "APP_PASSWORD" in st.secrets:
-            configured_pwd = str(st.secrets["APP_PASSWORD"])
-    except Exception:
-        pass
-
-    valid_token = get_secure_auth_token(configured_pwd)
-
-
+    """外來用戶白名單安全防護 (支援多用戶白名單、專屬免密邀請連結與記憶登入)"""
     # 1. 檢查 URL 網址參數是否持有有效 Token (F5 重新整理 / 分頁重開皆永久保持登入)
     url_token = None
     if hasattr(st, "query_params"):
@@ -260,9 +251,12 @@ def check_access_password() -> bool:
     elif hasattr(st, "experimental_get_query_params"):
         url_token = st.experimental_get_query_params().get("auth", [None])[0]
 
-    if url_token == valid_token:
-        st.session_state["_auth_verified"] = True
-        return True
+    if url_token:
+        is_valid, user_data = whitelist_svc.validate_access(url_token)
+        if is_valid:
+            st.session_state["_auth_verified"] = True
+            st.session_state["_auth_user"] = user_data
+            return True
 
     # 2. 檢查目前 Session 狀態 (每分鐘 WebSocket 動態刷新時維持登入)
     if st.session_state.get("_auth_verified", False):
@@ -273,7 +267,7 @@ def check_access_password() -> bool:
     <div style="max-width: 520px; margin: 40px auto 20px auto; background: linear-gradient(145deg, #111827, #1e1b4b); border: 1px solid #4338ca; border-radius: 14px; padding: 28px 24px; text-align: center; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.7);">
         <div style="font-size: 2.8rem; margin-bottom: 8px;">🔐</div>
         <h3 style="color: #f8fafc; font-weight: 800; margin-bottom: 6px;">全球總經 × 投資戰情室</h3>
-        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.6; margin-bottom: 0;">本系統受個人安全密鑰防護<br>請輸入存取通行碼以解鎖您的專屬戰情報告。</p>
+        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.6; margin-bottom: 0;">本系統受個人安全白名單防護<br>請輸入您的專屬通行碼以解鎖戰情報告。</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -288,19 +282,22 @@ def check_access_password() -> bool:
             submit_btn = st.form_submit_button("🔓 驗證並解鎖進入 (自動記住)", width="stretch")
             
             if submit_btn:
-                if pwd_input.strip() == configured_pwd:
+                is_valid, user_data = whitelist_svc.validate_access(pwd_input)
+                if is_valid:
                     st.session_state["_auth_verified"] = True
+                    st.session_state["_auth_user"] = user_data
                     st.session_state["_pwd_error"] = False
+                    user_token = user_data.get("token", generate_user_token(pwd_input))
                     if hasattr(st, "query_params"):
-                        st.query_params["auth"] = valid_token
+                        st.query_params["auth"] = user_token
                     elif hasattr(st, "experimental_set_query_params"):
-                        st.experimental_set_query_params(auth=valid_token)
+                        st.experimental_set_query_params(auth=user_token)
                     st.rerun()
                 else:
                     st.session_state["_pwd_error"] = True
-                    st.error("❌ 通行碼錯誤，存取已被拒絕！")
+                    st.error("❌ 通行碼錯誤或未在授權白名單內，存取已被拒絕！")
 
-        st.caption("🔒 系統已啟用端對端安全記憶保護 (登入後將自動保持連線)")
+        st.caption("🔒 系統已啟用多用戶白名單保護 (登入後將自動保持連線)")
 
     return False
 
@@ -308,6 +305,7 @@ def check_access_password() -> bool:
 # 若尚未驗證通過，立即中斷後續所有敏感數據與策略加載
 if not check_access_password():
     st.stop()
+
 
 
 
@@ -471,9 +469,54 @@ with st.sidebar:
             st.caption("📁 憑證檔案已就緒: `Sinopac.pfx`")
     else:
         st.info("ℹ️ 尚未輸入金鑰（目前運行於 TWSE 即時備援行情）")
+
+    # ================= 🛡️ 訪客白名單與專屬邀請管理 =================
+    st.markdown("---")
+    st.subheader("🛡️ 訪客白名單與邀請中心")
+    wl_list = whitelist_svc.get_whitelist()
+    st.write(f"👥 **已授權名額**: `{len(wl_list)} 位`")
+
+    with st.expander("點擊管理白名單與取得專屬邀請連結", expanded=False):
+        st.markdown("##### 📋 目前授權名單：")
+        for u in wl_list:
+            u_role = "👑 站長" if u.get("role") == "admin" else "👤 授權訪客"
+            u_token = u.get("token", "")
+            u_invite_link = f"https://aichinga00.streamlit.app/?auth={u_token}"
+            with st.container(border=True):
+                st.markdown(f"**{u['name']}** ({u_role}) ｜ 通行碼: `{u['passcode']}`")
+                st.caption(f"備註: {u.get('note', '無')} ｜ 建立時間: {u.get('created_at', '')}")
+                st.caption("🔗 專屬 1 鍵免密登入網址 (複製即可傳給對方)：")
+                st.code(u_invite_link, language="text")
+                if u.get("id") != "admin_master":
+                    if st.button("🗑️ 廢止此用戶授權", key=f"btn_del_wl_{u['id']}", width="stretch"):
+                        ok_rm, msg_rm = whitelist_svc.remove_user(u["id"])
+                        if ok_rm:
+                            st.success(f"已廢止 {u['name']} 的存取授權！")
+                            st.rerun()
+                        else:
+                            st.error(msg_rm)
+
+        st.markdown("---")
+        st.markdown("##### ➕ 新增外來用戶授權：")
+        with st.form(key="form_add_whitelist_member"):
+            new_u_name = st.text_input("用戶姓名 / 標籤", placeholder="例如: 台北王經理、VIP好友")
+            new_u_pwd = st.text_input("設定專屬通行碼", placeholder="例如: vip888、friend2026")
+            new_u_note = st.text_input("備註說明", placeholder="例如: LINE 投資群好友")
+            submit_add_u = st.form_submit_button("💾 儲存並生成專屬邀請連結", width="stretch")
+            if submit_add_u:
+                if new_u_name and new_u_pwd:
+                    ok_add, msg_add = whitelist_svc.add_user(new_u_name, new_u_pwd, new_u_note)
+                    if ok_add:
+                        st.success(f"✅ {msg_add}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg_add}")
+                else:
+                    st.warning("請填寫姓名與通行碼！")
     
     st.markdown("---")
     st.subheader("⚡ 即時操作")
+
     
     if st.button("🔄 立即重新運算並發布戰報", width="stretch", key="btn_refresh_action"):
         try:
@@ -780,21 +823,21 @@ def render_stock_card(s: dict, idx: int, prefix: str = "card"):
 
 
 # =========================== 分頁導覽 ===========================
-tab_portfolio, tab_long_term, tab_swing, tab_sinopac, tab_macro, tab_industry, tab_stocks, tab_history = st.tabs([
+tab_portfolio, tab_long_term, tab_swing, tab_sinopac, tab_macro, tab_industry, tab_history = st.tabs([
     "💼 【我的永豐金庫存持股與進出場風控中樞】",
     "🏛️ 【長期價值投資與定期定額 (自訂標的)】",
-    "⚡ 【5~7天高動能波段推薦 (台美股)】",
+    "⚡ 【14~21天高動能波段推薦 (台美股)】",
     "🏛️ 【永豐金證券 即時台股雷達 (Shioaji)】",
     "🌐 【總經雷達與地緣戰報】",
     "🏭 【工研院 IEK 產業趨勢 × 台灣景氣】",
-    "🚀 【台美精選投資標的 (Stock Picks)】",
     "📈 【歷史走勢與數據監控】"
 ])
 
 # =========================== TAB 0: 我的永豐金庫存持股與進出場風控中樞 ===========================
 with tab_portfolio:
     st.markdown("### 💼 我的永豐金庫存持股與個人化進出場風控中樞 (SinoPac Portfolio Radar)")
-    st.caption("連線永豐金證券 Shioaji 庫存部位 ｜ 依買入成本精算【+8% / +15% 停利目標】與【-4% 硬性防守停損】 ｜ 5~7 天波段時效倒數導航")
+    st.caption("連線永豐金證券 Shioaji 庫存部位 ｜ 依買入成本精算【+8% / +15% 停利目標】與【-4% 硬性防守停損】 ｜ 14~21 天 (2~3週) 波段時效倒數導航")
+
 
     pos_summary = pos_tracking_service.get_all_positions_summary()
     active_positions = pos_summary.get("positions", [])
@@ -1016,9 +1059,10 @@ with tab_portfolio:
 
                 with g_c4:
                     with st.container(border=True):
-                        st.markdown("<div style='font-size:0.75rem; color:#fdba74; font-weight:700;'>⏱️ 5~7 天波段時效倒數</div>", unsafe_allow_html=True)
+                        st.markdown("<div style='font-size:0.75rem; color:#fdba74; font-weight:700;'>⏱️ 14~21 天波段時效倒數</div>", unsafe_allow_html=True)
                         st.markdown(f"<div style='font-size:1.2rem; font-weight:800; color:#f97316;'>第 {pos['held_days']} 天 / 剩 {pos['remaining_days']} 天</div>", unsafe_allow_html=True)
-                        st.caption("波段週期：5~7 個交易日\n\n**滿期未發動即時間停損**")
+                        st.caption("波段週期：14~21 個交易日\n\n**滿期未發動即時間停損**")
+
 
                 # 操盤手當前行動指令
                 st.markdown(f"""
@@ -1429,21 +1473,22 @@ with tab_long_term:
     else:
         st.info("目前長期追蹤清單為空。您可以搜尋任何標的並點擊「⭐ 加入我的長期追蹤池」，或在上方管理面板點擊「🔄 恢復經典核心組合」。")
 
-# =========================== TAB 1: 5~7天高動能波段交易 (台股 + 永豐金複委託美股) ===========================
+# =========================== TAB 2: 14~21天高動能波段交易 (台股 + 永豐金複委託美股) ===========================
 with tab_swing:
-    st.markdown("### ⚡ 三維合流 5~7 天高動能波段交易戰情報告 (Swing Trading Strategy)")
-    st.caption("內建三大鐵律：1) 嚴格數學【驗證鏈】杜絕幻覺 ｜ 2) 操盤手 5 步【思考鏈】歷程 ｜ 3) 僅採用官方一級【權威來源】 ｜ 🇹🇼 台股 + 🇺🇸 永豐金複委託美股")
+    st.markdown("### ⚡ 三維合流 14~21 天高動能波段交易戰情報告 (Swing Trading Strategy)")
+    st.caption("內建三大鐵律：1) 嚴格數學【驗證鏈】杜絕幻覺 ｜ 2) 操盤手 5 步【思考鏈】歷程 ｜ 3) 僅採用官方一級【權威來源】 ｜ 🇹🇼 台股 (<1000元) + 🇺🇸 永豐金複委託美股 (<100美元)")
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("🎯 交易持股週期", "5 ~ 7 個交易日", "高週轉波段衝刺")
-    kpi2.metric("🛡️ 最大容忍虧損", "-3.5% ~ -5.5%", "嚴格破 20MA 停損")
-    kpi3.metric("🚀 預期波段目標", "+8.0% ~ +15.0%", "鎖定主升段催化")
+    kpi1.metric("🎯 交易持股週期", "14 ~ 21 個交易日", "2~3週波段操作")
+    kpi2.metric("🛡️ 最大容忍虧損", "-4.0% ~ -5.0%", "嚴格硬性防守停損")
+    kpi3.metric("🚀 預期波段目標", "+12.0% ~ +20.0%", "鎖定主升段催化")
     kpi4.metric("⚖️ 最低風報比要求", ">= 1 : 2.5", "不對市場妥協")
 
     st.markdown("---")
 
-    st.info("💡 **波段操作提示**：當您在下方推薦清單中買入任何標的後，點擊該卡片底部的 **「🛒 我已買入此標的」** 登記您的成交價格，即可在第一個分頁 **【💼 我的永豐金庫存持股與進出場風控中樞】** 啟動專屬的停利停損點位與 5~7 天時效倒數！")
+    st.info("💡 **波段操作提示**：當您在下方推薦清單中買入任何標的後，點擊該卡片底部的 **「🛒 我已買入此標的」** 登記您的成交價格，即可在第一個分頁 **【💼 我的永豐金庫存持股與進出場風控中樞】** 啟動專屬的停利停損點位與 14~21 天時效倒數！")
     st.markdown("---")
+
 
 
 
@@ -1662,31 +1707,8 @@ with tab_industry:
             st.caption(f"📊 產值動能預測：{trend['growth_forecast']}")
             st.info(trend['plain_explanation'])
 
-# =========================== TAB 5: 台美精選投資標的 ===========================
-with tab_stocks:
-    st.markdown("### 🎯 總經與 IEK 產業鏈連動：台股與美股精選標的")
-    col_tw_stocks, col_us_stocks = st.columns(2)
-    with col_tw_stocks:
-        st.markdown("#### 🇹🇼 台灣精選個股 / ETF (台股核心池)")
-        for stk in stocks.get("taiwan_stocks", []):
-            with st.container(border=True):
-                st.markdown(f"**{stk['name']}** ({stk['ticker']}) ｜ <span style='color:#34d399; font-weight:700;'>{stk['rating']}</span>", unsafe_allow_html=True)
-                st.caption(f"🏷️ {stk['sector']} ｜ 定位：{stk['target_role']}")
-                st.write(f"💡 {stk['plain_rationale']}")
-                st.markdown(f"<div style='background-color:#0f172a; padding:6px 10px; border-radius:4px; font-size:0.85rem; color:#93c5fd;'>🧭 <b>操作戰術</b>：{stk['action_strategy']}</div>", unsafe_allow_html=True)
-                st.write("")
-
-    with col_us_stocks:
-        st.markdown("#### 🇺🇸 美國精選個股 / ETF (複委託核心池)")
-        for stk in stocks.get("us_stocks", []):
-            with st.container(border=True):
-                st.markdown(f"**{stk['name']}** ({stk['ticker']}) ｜ <span style='color:#34d399; font-weight:700;'>{stk['rating']}</span>", unsafe_allow_html=True)
-                st.caption(f"🏷️ {stk['sector']} ｜ 定位：{stk['target_role']}")
-                st.write(f"💡 {stk['plain_rationale']}")
-                st.markdown(f"<div style='background-color:#0f172a; padding:6px 10px; border-radius:4px; font-size:0.85rem; color:#fde047;'>🧭 <b>操作戰術</b>：{stk['action_strategy']}</div>", unsafe_allow_html=True)
-                st.write("")
-
 # =========================== TAB 6: 歷史走勢 ===========================
+
 with tab_history:
     st.markdown("### 📈 30 天宏觀信心軌跡與數據監控")
     if HISTORY_REPORT_PATH.exists():

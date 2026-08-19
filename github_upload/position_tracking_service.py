@@ -16,8 +16,9 @@ class PositionTrackingService:
     50年華爾街傳奇操盤手：永豐金波段持股庫存與個人化進出場風控導航引擎
     - 1. 自動從永豐金 Shioaji API 同步實盤/模擬庫存
     - 2. 支援手動登記買入標的、自訂成本價格、持股股數、買入日期
-    - 3. 精算個人買入成本專屬之 5~7 天進出場點位 (+8% / +15% 停利、-4% 停損、持股天數倒數)
+    - 3. 精算個人買入成本專屬之 14~21 天進出場點位 (+8% / +15% 停利、-4% 停損、持股天數倒數)
     """
+
 
     def __init__(self):
         self.sinopac_svc = SinoPacDataService()
@@ -199,7 +200,7 @@ class PositionTrackingService:
         sl_price = round(cost * (1 - stop_loss_pct / 100.0), 2)  # 停損價 (-4%)
         sl_loss_val = round((cost - sl_price) * shares, 2)
 
-        # 5. 計算已持股天數與 5~7 天週期倒數
+        # 5. 計算已持股天數與 14~21 天週期倒數
         try:
             buy_dt = datetime.datetime.strptime(buy_date_str, "%Y-%m-%d").date()
             today_dt = get_tw_now().date()
@@ -207,7 +208,8 @@ class PositionTrackingService:
         except Exception:
             held_days = 1
 
-        remaining_days = max(7 - held_days, 0)
+        max_swing_days = 21
+        remaining_days = max(max_swing_days - held_days, 0)
 
         # 6. 判定即時風控狀態與操盤手戰術指示
         if curr_price >= tp2_price:
@@ -222,18 +224,19 @@ class PositionTrackingService:
             status_badge = "🚨 觸發硬性停損防線 (EXIT NOW)"
             status_color = "#ef4444"
             action_advice = f"⚠️ 警告：現價已跌破硬性停損價 ({curr_sym}{sl_price} / -{stop_loss_pct}%)！操盤手鐵律：絕不凹單，立即果斷停損出場，保全本金！"
-        elif held_days >= 7:
-            status_badge = "⏱️ 已達 7 天波段時效 (時間停損檢驗)"
+        elif held_days >= 21:
+            status_badge = "⏱️ 已達 21 天波段時效 (時間停損檢驗)"
             status_color = "#f59e0b"
-            action_advice = f"持股已滿 {held_days} 天，若股價未拉出主升段且動能趨緩，建議執行『時間停損 (Time Stop)』平倉換股，避免資金效率卡死！"
+            action_advice = f"持股已滿 {held_days} 天（達 14~21 天波段上限），若股價未拉出主升段且動能趨緩，建議執行『時間停損 (Time Stop)』平倉換股，避免資金效率卡死！"
         elif roi_pct >= 0:
             status_badge = "🟢 獲利順風持股中 (HOLD)"
             status_color = "#3b82f6"
-            action_advice = f"目前帳面獲利 +{roi_pct}%，均線架構良好。距離 5~7 天週期尚有 {remaining_days} 天，續抱等待主升段催化發動！"
+            action_advice = f"目前帳面獲利 +{roi_pct}%，均線架構良好。距離 14~21 天週期尚有 {remaining_days} 天，續抱等待主升段催化發動！"
         else:
             status_badge = "🟡 成本防守震盪區 (WATCH)"
             status_color = "#eab308"
-            action_advice = f"目前在成本區小幅回檔 ({roi_pct}%)，未觸及停損防線 ({curr_sym}{sl_price})。嚴密監控 20MA 月線支撐，破線即撤。"
+            action_advice = f"目前在成本區小幅回檔 ({roi_pct}%)，未觸及停損防線 ({curr_sym}{sl_price})。嚴密監控 20MA/60MA 均線支撐，破線即撤。"
+
 
         return {
             "ticker": ticker,
