@@ -19,6 +19,8 @@ from config import (
     SHIOAJI_SECRET_KEY,
     SHIOAJI_SIMULATION,
     REFRESH_INTERVAL_MINUTES,
+    TW_TZ,
+    get_tw_now,
     get_tw_now_str
 )
 from scheduler_daemon import run_daily_macro_pipeline
@@ -240,10 +242,16 @@ def get_secure_auth_token(password: str) -> str:
 def check_access_password() -> bool:
     """個人專屬私密通行碼安全防護 (支援記憶登入，重新整理免重複輸入)"""
     configured_pwd = str(getattr(config, "APP_PASSWORD", "a7883310"))
-    if hasattr(st, "secrets") and "APP_PASSWORD" in st.secrets:
-        configured_pwd = str(st.secrets["APP_PASSWORD"])
+
+
+    try:
+        if hasattr(st, "secrets") and "APP_PASSWORD" in st.secrets:
+            configured_pwd = str(st.secrets["APP_PASSWORD"])
+    except Exception:
+        pass
 
     valid_token = get_secure_auth_token(configured_pwd)
+
 
     # 1. 檢查 URL 網址參數是否持有有效 Token (F5 重新整理 / 分頁重開皆永久保持登入)
     url_token = None
