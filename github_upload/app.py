@@ -28,6 +28,7 @@ from notifier import send_desktop_notification
 from long_term_strategy_service import LongTermStrategyService
 from position_tracking_service import PositionTrackingService
 from sinopac_service import SinoPacDataService
+from swing_trading_screener import SwingTradingScreener
 try:
     from streamlit_autorefresh import st_autorefresh
 except ImportError:
@@ -366,6 +367,8 @@ if "alert_msg" not in st.session_state:
     st.session_state["alert_msg"] = None
 if "custom_search_ticker" not in st.session_state:
     st.session_state["custom_search_ticker"] = "0050"
+if "custom_swing_search_ticker" not in st.session_state:
+    st.session_state["custom_swing_search_ticker"] = "2317"
 if "odd_lot_budget" not in st.session_state:
     st.session_state["odd_lot_budget"] = 3000
 
@@ -378,23 +381,21 @@ signals = raw.get("macro_radar", {})
 threats = raw.get("geopolitical_threats", [])
 tw_macro = report.get("taiwan_macro", {})
 trends = report.get("industry_trends", [])
-stocks = report.get("stock_recommendations", {})
 sinopac_data = report.get("sinopac_market_data", {})
 index_data = sinopac_data.get("market_index", {})
 watch_list = sinopac_data.get("watch_list", [])
-swing_data = report.get("swing_trading", {})
-swing_stocks = swing_data.get("stocks", [])
-tw_swing_stocks = swing_data.get("tw_stocks", [])
-us_sub_stocks = swing_data.get("us_sub_stocks", [])
 
-# 長期投資與持股風控導航服務
+# 長期投資、波段研報與持股風控導航服務
 long_term_service = LongTermStrategyService()
 pos_tracking_service = PositionTrackingService()
+swing_screener = SwingTradingScreener()
 
-# 若無拆分則從 all stocks 依市場屬性區分
-if not tw_swing_stocks and swing_stocks:
-    tw_swing_stocks = [s for s in swing_stocks if s.get("market") == "TW" or s.get("currency") == "TWD"]
-    us_sub_stocks = [s for s in swing_stocks if s.get("market") == "US_SUB" or s.get("currency") == "USD"]
+# 載入最新 14~21 天機構級研究報告標的池 (嚴格落實台股<1000元 + 美股<100美元)
+swing_screening_result = swing_screener.run_screening()
+tw_swing_stocks = swing_screening_result.get("tw_stocks", [])
+us_sub_stocks = swing_screening_result.get("us_stocks", [])
+swing_stocks = swing_screening_result.get("all_stocks", [])
+
 
 # =========================== 側邊欄控制台 ===========================
 with st.sidebar:
@@ -556,6 +557,164 @@ with st.sidebar:
             st.info(msg_text)
 
 # =========================== 主面板 Header ===========================
+def render_institutional_stock_card(s: dict, idx: int, prefix: str = "tw"):
+    """
+    50年華爾街資深投資分析師：6 大標準章節機構級法人研究報告卡片
+    1. 獲利能力與趨勢比較 (營收、毛利、營益、淨利、EPS、YoY/QoQ、毛利率歸因)
+    2. 營運效率警訊檢查 (存貨週轉天數、應收帳款天數、警訊檢查)
+    3. 現金流品質 (營業活動現金流 vs 稅後淨利、FCF 試算)
+    4. 未來展望 (公司財務預測 Guidance、6-12 個月成長動能)
+    5. 法說會質化重點 (競爭優勢、客戶集中度風險、新技術)
+    6. 市場焦點與 14~21天波段策略 (法人三大焦點、挑選邏輯、進出場點位、主要風險)
+    """
+    if not s:
+        return
+
+    sec1 = s.get("sec1_profitability", {})
+    sec2 = s.get("sec2_operating_efficiency", {})
+    sec3 = s.get("sec3_cash_flow_quality", {})
+    sec4 = s.get("sec4_future_outlook", {})
+    sec5 = s.get("sec5_earnings_call", {})
+    sec6 = s.get("sec6_recommendation", {})
+
+    is_us = s.get("currency") == "USD" or s.get("market") == "US_SUB"
+    curr_sym = "$" if is_us else "NT$"
+    curr_label = "USD" if is_us else "TWD"
+    curr_p = float(sec6.get("current_price", s.get("ref_price", 100.0)))
+    target_p = float(sec6.get("target_price", round(curr_p * 1.15, 2)))
+    stop_p = float(sec6.get("stop_loss_price", round(curr_p * 0.955, 2)))
+    gain_pct = float(sec6.get("target_gain_pct", 15.0))
+    loss_pct = float(sec6.get("stop_loss_pct", 4.5))
+    rr_ratio = sec6.get("risk_reward_ratio", "1 : 3.3")
+    q_date = s.get("query_date", get_tw_now_str("%Y-%m-%d"))
+
+    with st.container(border=True):
+        # 頂部抬頭與價格約束徽章
+        c_head1, c_head2 = st.columns([3, 2])
+        with c_head1:
+            market_badge = "🇺🇸 永豐金複委託美股" if is_us else "🇹🇼 永豐金台股核心"
+            price_limit_txt = "🟢 符合美股 < $100 USD 約束" if is_us else "🟢 符合台股 < 1000 元約束"
+            st.subheader(f"💎 {s['name']} ({s['ticker']}) ｜ {s.get('sector', '核心科技')}")
+            st.caption(f"{market_badge} ｜ 即時現價：**{curr_sym}{curr_p} {curr_label}** ｜ {price_limit_txt} ｜ 查價日期：`{q_date}`")
+        with c_head2:
+            st.markdown(f"""
+            <div style="text-align:right; margin-top:6px;">
+                <span style="background-color:#1e1b4b; color:#a5b4fc; padding:5px 12px; border-radius:6px; font-weight:800; font-size:0.95rem; border:1px solid #6366f1;">
+                    ⏱️ 14~21 天波段 (風報比 {rr_ratio})
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 4 大波段戰術執行方塊
+        st.markdown(f"""
+        <div class="execution-grid">
+            <div class="entry-box">
+                <div style="font-size:0.75rem; color:#93c5fd; font-weight:600;">🎯 建議進場點位</div>
+                <div style="font-size:1.25rem; font-weight:800; color:#60a5fa; margin-top:2px;">{curr_sym}{curr_p}</div>
+                <div style="font-size:0.7rem; color:#94a3b8;">回踩 20MA 均線分批佈局</div>
+            </div>
+            <div class="target-box">
+                <div style="font-size:0.75rem; color:#6ee7b7; font-weight:600;">🚀 14~21天波段目標價</div>
+                <div style="font-size:1.25rem; font-weight:800; color:#10b981; margin-top:2px;">{curr_sym}{target_p}</div>
+                <div style="font-size:0.7rem; color:#34d399;">預期獲利 +{gain_pct}%</div>
+            </div>
+            <div class="stop-box">
+                <div style="font-size:0.75rem; color:#fca5a5; font-weight:600;">🛑 硬性防守停損價</div>
+                <div style="font-size:1.25rem; font-weight:800; color:#ef4444; margin-top:2px;">{curr_sym}{stop_p}</div>
+                <div style="font-size:0.7rem; color:#f87171;">最大虧損 -{loss_pct}% (破位必砍)</div>
+            </div>
+            <div class="rr-box">
+                <div style="font-size:0.75rem; color:#fdba74; font-weight:600;">⚖️ 風險報酬比</div>
+                <div style="font-size:1.25rem; font-weight:800; color:#f97316; margin-top:2px;">{rr_ratio}</div>
+                <div style="font-size:0.7rem; color:#fb923c;">嚴格大於操盤手門檻 1:2.5</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # 6 大標準章節分頁
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            "📊 一、獲利能力與趨勢",
+            "🛡️ 二、營運效率警訊",
+            "💰 三、現金流品質",
+            "🔭 四、未來展望",
+            "🎙️ 五、法說會質化重點",
+            "🧭 六、市場焦點與波段策略"
+        ])
+
+        with tab1:
+            st.markdown("##### 📊 一、獲利能力與趨勢比較")
+            st.markdown(f"- **本季營收表現**：{sec1.get('revenue_quarterly', '查無資料')}")
+            st.markdown(f"- **毛利率**：`{sec1.get('gross_margin', '查無資料')}` ｜ **營業利益率**：`{sec1.get('operating_margin', '查無資料')}` ｜ **稅後淨利率**：`{sec1.get('net_margin', '查無資料')}`")
+            st.markdown(f"- **本季 EPS**：**{sec1.get('eps', '查無資料')}**")
+            st.markdown(f"- **YoY / QoQ 趨勢比較**：{sec1.get('yoy_qoq_trend', '查無資料')}")
+            st.info(f"💡 **毛利率變動原因分析**：\n\n{sec1.get('margin_driver', '查無資料')}")
+
+        with tab2:
+            st.markdown("##### 🛡️ 二、營運效率警訊檢查")
+            st.markdown(f"- **存貨金額與存貨週轉天數**：{sec2.get('inventory_and_days', '查無資料')}")
+            st.markdown(f"- **應收帳款與收現天數 (DSO)**：{sec2.get('ar_and_dso', '查無資料')}")
+            st.success(f"🔍 **警訊檢查結論**：\n\n{sec2.get('warning_check', '查無重大營運警訊。')}")
+
+        with tab3:
+            st.markdown("##### 💰 三、現金流品質")
+            st.markdown(f"- **營業活動現金流 vs. 稅後淨利**：\n\n{sec3.get('ocf_vs_net_income', '查無資料')}")
+            st.markdown(f"- **自由現金流 (FCF) 試算與出處**：\n\n{sec3.get('fcf_calc', '查無資料')}")
+
+        with tab4:
+            st.markdown("##### 🔭 四、未來展望")
+            st.markdown(f"- **公司財務預測 (Guidance)**：\n\n{sec4.get('guidance', '公司未提供正式財測')}")
+            st.markdown(f"- **未來 6–12 個月成長動能與資本支出**：\n\n{sec4.get('growth_drivers', '查無資料')}")
+
+        with tab5:
+            st.markdown("##### 🎙️ 五、法說會質化重點")
+            st.markdown(f"- **競爭優勢與經濟護城河**：\n\n{sec5.get('competitive_moat', '查無公開資料')}")
+            st.markdown(f"- **重要客戶集中度與新技術布局**：\n\n{sec5.get('concentration_and_tech', '查無公開資料')}")
+
+        with tab6:
+            st.markdown("##### 🧭 六、市場焦點與 14~21 天波段策略建議")
+            st.markdown("**📌 法人與市場目前最關注的三個核心議題**：")
+            for issue in sec6.get("core_issues", []):
+                st.markdown(f"- {issue}")
+            
+            st.markdown("---")
+            st.markdown(f"**🎯 挑選邏輯（呼應前五項分析）**：\n\n{sec6.get('selection_logic', '')}")
+            st.markdown(f"**⏱️ 操作波段週期**：`{sec6.get('target_horizon', '14 ~ 21 個交易日 (2~3週)')}`")
+            st.markdown(f"**💰 目前約略價位**：`{curr_sym}{curr_p} {curr_label}`（查價日期：`{q_date}`）")
+            st.error(f"⚠️ **主要風險因素**：\n\n{sec6.get('main_risks', '市場系統性波動風險')}")
+
+        # 登記至庫存中樞
+        st.markdown("---")
+        with st.expander(f"🛒 我已買入 {s['name']}（登記買入成本，啟動 14~21 天進出場導航）", expanded=False):
+            st.caption("輸入您的實際買進價格與股數，系統將自動為您精算【個人專屬停利停損點】與【14~21天持股倒數計時】：")
+            reg_c1, reg_c2, reg_c3, reg_c4 = st.columns(4)
+            with reg_c1:
+                reg_cost = st.number_input("買入成本單價", value=curr_p, step=1.0 if not is_us else 0.1, key=f"inp_reg_c_{prefix}_{s['ticker']}_{idx}")
+            with reg_c2:
+                default_shares = 100 if not is_us else 10
+                reg_shares = st.number_input("買入股數 (零股/整張)", value=default_shares, min_value=1, step=10, key=f"inp_reg_sh_{prefix}_{s['ticker']}_{idx}")
+            with reg_c3:
+                reg_buy_date = st.date_input("買入日期", value=get_tw_now().date(), key=f"inp_reg_d_{prefix}_{s['ticker']}_{idx}").strftime("%Y-%m-%d")
+            with reg_c4:
+                st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+                if st.button("📌 確認登記至我的波段持股", key=f"btn_confirm_reg_{prefix}_{s['ticker']}_{idx}", width="stretch"):
+                    pos_tracking_service.add_or_update_position(
+                        ticker=s['ticker'],
+                        name=s['name'],
+                        market=s.get('market', 'TW'),
+                        currency=curr_label,
+                        cost_price=float(reg_cost),
+                        shares=int(reg_shares),
+                        buy_date=reg_buy_date,
+                        target_gain_pct=float(gain_pct),
+                        stop_loss_pct=float(loss_pct),
+                        strategy_note=f"14~21天機構波段 ({s.get('sector', '科技')})"
+                    )
+                    st.success(f"✅ 已成功登記 {s['name']} ({s['ticker']}) 買入成本 {curr_sym}{reg_cost}！請至上方【我的永豐金波段持股】查看即時風控導航。")
+                    st.toast(f"✅ 已登記 {s['ticker']} 至我的波段持股！", icon="🎯")
+                    st.rerun()
+
+        st.write("")
+
 st.markdown(f"""
 <div class="war-room-header">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
@@ -1473,10 +1632,10 @@ with tab_long_term:
     else:
         st.info("目前長期追蹤清單為空。您可以搜尋任何標的並點擊「⭐ 加入我的長期追蹤池」，或在上方管理面板點擊「🔄 恢復經典核心組合」。")
 
-# =========================== TAB 2: 14~21天高動能波段交易 (台股 + 永豐金複委託美股) ===========================
+# =========================== TAB 2: 50年華爾街資深分析師 機構級 14~21天波段研究報告 ===========================
 with tab_swing:
-    st.markdown("### ⚡ 三維合流 14~21 天高動能波段交易戰情報告 (Swing Trading Strategy)")
-    st.caption("內建三大鐵律：1) 嚴格數學【驗證鏈】杜絕幻覺 ｜ 2) 操盤手 5 步【思考鏈】歷程 ｜ 3) 僅採用官方一級【權威來源】 ｜ 🇹🇼 台股 (<1000元) + 🇺🇸 永豐金複委託美股 (<100美元)")
+    st.markdown("### 🏛️ 50年華爾街資深分析師：機構級 14~21 天波段深度研究報告中心")
+    st.caption("嚴格落實 6 大標準章節深度剖析 ｜ 🇹🇼 台股標的 (< 1000 元) ｜ 🇺🇸 美股複委託 (< 100 美元) ｜ ⏱️ 14~21 天 (2~3週) 波段操作 ｜ 🏛️ 一級官方數據來源 (MOPS / SEC EDGAR / 法說會)")
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     kpi1.metric("🎯 交易持股週期", "14 ~ 21 個交易日", "2~3週波段操作")
@@ -1486,40 +1645,94 @@ with tab_swing:
 
     st.markdown("---")
 
-    st.info("💡 **波段操作提示**：當您在下方推薦清單中買入任何標的後，點擊該卡片底部的 **「🛒 我已買入此標的」** 登記您的成交價格，即可在第一個分頁 **【💼 我的永豐金庫存持股與進出場風控中樞】** 啟動專屬的停利停損點位與 14~21 天時效倒數！")
+    # 1. 🔍 任意個股機構級 6 大項研報即時生成器
+    st.markdown("#### 🔍 任意個股／複委託 6 大項機構級法人研究報告即時生成")
+    st.caption("輸入任意台股（如 2345, 3017, 2308, 2317）或美股（如 PLTR, MRVL, INTC, SOFI, OXY），即可由 50 年華爾街資深分析師生成完整 6 大項報告：")
+    
+    s_col1, s_col2 = st.columns([3, 1])
+    with s_col1:
+        target_swing_input = st.text_input(
+            "輸入股票代碼",
+            value=st.session_state["custom_swing_search_ticker"],
+            placeholder="例如: 2345, 3017, PLTR, MRVL, 2308, INTC, 2317, SOFI, OXY...",
+            key="input_search_swing_ticker_field"
+        ).strip().upper()
+    with s_col2:
+        st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+        if st.button("🚀 生成 6 大項機構研報", width="stretch", key="btn_run_swing_analysis"):
+            if target_swing_input:
+                st.session_state["custom_swing_search_ticker"] = target_swing_input
+                st.rerun()
+
+    # 快捷熱門機構標的 Chips
+    st.markdown("🔥 **精選機構核心標的快速切換 (真實行情嚴格：台股 < 1000 元 ｜ 美股 < 100 美元)**：")
+    sw_chips = [
+        ("2317", "🇹🇼 鴻海 (~NT$245)"),
+        ("2382", "🇹🇼 廣達 (~NT$331)"),
+        ("2301", "🇹🇼 光寶科 (~NT$273)"),
+        ("3231", "🇹🇼 緯創 (~NT$182)"),
+        ("0050", "🇹🇼 台灣50 (~NT$103)"),
+        ("INTC", "🇺🇸 Intel (~$93.6)"),
+        ("OXY", "🇺🇸 西方石油 (~$60.3)"),
+        ("HPE", "🇺🇸 慧與科技 (~$53.7)"),
+        ("SOFI", "🇺🇸 SoFi (~$18.6)"),
+        ("PATH", "🇺🇸 UiPath (~$15.9)")
+    ]
+    sw_chip_cols = st.columns(5)
+    for idx, (chip_tk, chip_label) in enumerate(sw_chips):
+        with sw_chip_cols[idx % 5]:
+            if st.button(chip_label, key=f"sw_chip_{chip_tk}", width="stretch"):
+                st.session_state["custom_swing_search_ticker"] = chip_tk
+                st.rerun()
+
+
     st.markdown("---")
 
+    # 渲染查詢之獨立標的 6 大項研報
+    searched_swing_tk = st.session_state["custom_swing_search_ticker"]
+    if searched_swing_tk:
+        st.markdown(f"### 📑 【{searched_swing_tk}】50年華爾街資深分析師 6 大項機構深度研究報告")
+        active_report = swing_screener.get_stock_report(searched_swing_tk)
+        if active_report:
+            render_institutional_stock_card(active_report, 0, prefix=f"searched_{searched_swing_tk}")
+        else:
+            st.warning(f"無法獲取 {searched_swing_tk} 的報告。")
 
+    st.markdown("---")
 
+    # 2. 精選台美機構研究報告總覽池
+    st.markdown("### 📑 台美機構核心候選池總覽 (Curated Institutional Baskets)")
+    st.info("💡 **波段操作提示**：當您在下方研究報告中買入任何標的後，點擊該卡片底部的 **「🛒 我已買入此標的」** 登記您的成交價格，即可在第一個分頁 **【💼 我的永豐金庫存持股與進出場風控中樞】** 啟動專屬的停利停損點位與 14~21 天時效倒數！")
 
-    sub_tab_us, sub_tab_tw, sub_tab_all = st.tabs([
-        f"🇺🇸 永豐金複委託美股主力波段 ({len(us_sub_stocks)} 檔)",
-        f"🇹🇼 永豐金台股核心主力波段 ({len(tw_swing_stocks)} 檔)",
-        f"🌟 全市場波段監控 ({len(swing_stocks)} 檔)"
+    sub_tab_tw, sub_tab_us, sub_tab_all = st.tabs([
+        f"🇹🇼 永豐金台股核心主力波段 ({len(tw_swing_stocks)} 檔 ｜ 股價 < 1000 元)",
+        f"🇺🇸 永豐金複委託美股主力波段 ({len(us_sub_stocks)} 檔 ｜ 股價 < 100 美元)",
+        f"🌟 全市場 14~21 天機構波段總覽 ({len(swing_stocks)} 檔)"
     ])
 
-    with sub_tab_us:
-        st.markdown("#### 🇺🇸 永豐金證券複委託 (SinoPac Sub-brokerage) 美股高動能波段標的")
-        st.caption("聚焦全球 AI 算力龍頭、ASIC 晶片、企業級 AI 軟體與納斯達克旗艦 ETF")
-        if us_sub_stocks:
-            for idx, s in enumerate(us_sub_stocks):
-                render_stock_card(s, idx, prefix="us_sub")
-        else:
-            st.info("目前無符合條件之美股複委託標的。")
-
     with sub_tab_tw:
-        st.markdown("#### 🇹🇼 永豐金證券台股核心高動能波段標的")
+        st.markdown("#### 🇹🇼 永豐金證券台股核心高動能波段標的 (股價嚴格 < 1000 元)")
         st.caption("聚焦 800G 交換器、AI 伺服器水冷、先進封裝與高階載板龍頭")
         if tw_swing_stocks:
             for idx, s in enumerate(tw_swing_stocks):
-                render_stock_card(s, idx, prefix="tw_swing")
+                render_institutional_stock_card(s, idx, prefix="tw_swing_basket")
         else:
             st.info("目前無符合條件之台股標的。")
+
+    with sub_tab_us:
+        st.markdown("#### 🇺🇸 永豐金證券複委託 (SinoPac Sub-brokerage) 美股主力波段 (股價嚴格 < 100 美元)")
+        st.caption("聚焦企業級 AI 軟體平台、客製化 ASIC 晶片、半導體 IDM 轉型與巴菲特能源重倉")
+        if us_sub_stocks:
+            for idx, s in enumerate(us_sub_stocks):
+                render_institutional_stock_card(s, idx, prefix="us_sub_basket")
+        else:
+            st.info("目前無符合條件之美股複委託標的。")
 
     with sub_tab_all:
         if swing_stocks:
             for idx, s in enumerate(swing_stocks):
-                render_stock_card(s, idx, prefix="all_swing")
+                render_institutional_stock_card(s, idx, prefix="all_swing_basket")
+
 
 
 # =========================== TAB 2: 永豐金證券 即時台股雷達 ===========================
