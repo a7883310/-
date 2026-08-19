@@ -1,0 +1,11 @@
+streamlit>=1.30.0
+plotly>=5.18.0
+pandas>=2.0.0
+requests>=2.31.0
+schedule>=1.2.0
+plyer>=2.1.0
+python-dotenv>=1.0.0
+shioaji>=1.7.0
+qrcode>=8.0.0
+pillow>=10.0.0
+streamlit-autorefresh>=1.0.1
