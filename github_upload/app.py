@@ -564,9 +564,10 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-def render_stock_card(s: dict, idx: int):
+def render_stock_card(s: dict, idx: int, prefix: str = "card"):
     """通用單一標的卡片渲染函式 (支援台股與永豐金複委託美股波段)"""
     ch1 = s["chapter_1"]
+
     ch2 = s["chapter_2"]
     ch3 = s["chapter_3"]
     ch4 = s["chapter_4"]
@@ -749,15 +750,16 @@ def render_stock_card(s: dict, idx: int):
             reg_c1, reg_c2, reg_c3, reg_c4 = st.columns(4)
             with reg_c1:
                 cur_p = float(s.get('current_price', 100.0))
-                reg_cost = st.number_input("買入成本單價", value=cur_p, step=1.0 if not is_us else 0.1, key=f"inp_reg_c_{s['ticker']}_{idx}")
+                reg_cost = st.number_input("買入成本單價", value=cur_p, step=1.0 if not is_us else 0.1, key=f"inp_reg_c_{prefix}_{s['ticker']}_{idx}")
             with reg_c2:
                 default_shares = 100 if not is_us else 10
-                reg_shares = st.number_input("買入股數 (零股/整張)", value=default_shares, min_value=1, step=10, key=f"inp_reg_sh_{s['ticker']}_{idx}")
+                reg_shares = st.number_input("買入股數 (零股/整張)", value=default_shares, min_value=1, step=10, key=f"inp_reg_sh_{prefix}_{s['ticker']}_{idx}")
             with reg_c3:
-                reg_buy_date = st.date_input("買入日期", value=get_tw_now().date(), key=f"inp_reg_d_{s['ticker']}_{idx}").strftime("%Y-%m-%d")
+                reg_buy_date = st.date_input("買入日期", value=get_tw_now().date(), key=f"inp_reg_d_{prefix}_{s['ticker']}_{idx}").strftime("%Y-%m-%d")
             with reg_c4:
                 st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
-                if st.button("📌 確認登記至我的波段持股", key=f"btn_confirm_reg_{s['ticker']}_{idx}", width="stretch"):
+                if st.button("📌 確認登記至我的波段持股", key=f"btn_confirm_reg_{prefix}_{s['ticker']}_{idx}", width="stretch"):
+
                     pos_tracking_service.add_or_update_position(
                         ticker=s['ticker'],
                         name=s['name'],
@@ -1426,7 +1428,7 @@ with tab_swing:
         st.caption("聚焦全球 AI 算力龍頭、ASIC 晶片、企業級 AI 軟體與納斯達克旗艦 ETF")
         if us_sub_stocks:
             for idx, s in enumerate(us_sub_stocks):
-                render_stock_card(s, idx)
+                render_stock_card(s, idx, prefix="us_sub")
         else:
             st.info("目前無符合條件之美股複委託標的。")
 
@@ -1435,14 +1437,15 @@ with tab_swing:
         st.caption("聚焦 800G 交換器、AI 伺服器水冷、先進封裝與高階載板龍頭")
         if tw_swing_stocks:
             for idx, s in enumerate(tw_swing_stocks):
-                render_stock_card(s, idx)
+                render_stock_card(s, idx, prefix="tw_swing")
         else:
             st.info("目前無符合條件之台股標的。")
 
     with sub_tab_all:
         if swing_stocks:
             for idx, s in enumerate(swing_stocks):
-                render_stock_card(s, idx)
+                render_stock_card(s, idx, prefix="all_swing")
+
 
 # =========================== TAB 2: 永豐金證券 即時台股雷達 ===========================
 with tab_sinopac:
