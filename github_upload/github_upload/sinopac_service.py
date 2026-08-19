@@ -153,7 +153,7 @@ class SinoPacDataService:
             return False
 
     def fetch_real_shioaji_positions(self) -> List[Dict[str, Any]]:
-        """若 Shioaji 已連線且帳號具備權限，直接從永豐金證券伺服器查詢真實庫存部位"""
+        """若 Shioaji 已連線且帳號具備權限，直接從永豐金證券伺服器查詢真實庫存部位 (支援台股與複委託)"""
         if not self.is_connected or not self.api:
             return []
         
@@ -163,42 +163,55 @@ class SinoPacDataService:
             if not self.is_ca_activated and self.ca_path and os.path.exists(self.ca_path) and self.ca_passwd:
                 self.activate_ca_certificate(self.ca_path, self.ca_passwd, self.person_id)
 
-            if hasattr(self.api, "stock_account") and self.api.stock_account:
-                positions = self.api.list_positions(self.api.stock_account)
-                if positions:
-                    for p in positions:
-                        code = str(p.code)
-                        qty = int(p.quantity)
-                        price = float(p.price)
-                        cond_str = "融資" if "Margin" in str(p.cond) else "現股"
-                        
-                        stock_name = code
-                        try:
-                            contract = self.api.Contracts.Stocks.get(code)
-                            if contract and hasattr(contract, "name"):
-                                stock_name = contract.name
-                        except Exception:
-                            pass
+            accounts_to_check = []
+            if hasattr(self.api, "list_accounts"):
+                accounts_to_check = self.api.list_accounts()
+            elif hasattr(self.api, "stock_account") and self.api.stock_account:
+                accounts_to_check = [self.api.stock_account]
 
-                        shares = qty * 1000 if qty < 500 else qty
-                        lots = qty if qty < 500 else int(qty // 1000)
+            for acc in accounts_to_check:
+                try:
+                    positions = self.api.list_positions(acc)
+                    if positions:
+                        for p in positions:
+                            code = str(p.code)
+                            qty = int(p.quantity)
+                            price = float(p.price)
+                            cond_str = "融資" if "Margin" in str(getattr(p, "cond", "")) else "現股"
+                            is_intl = "Intl" in type(acc).__name__
+                            
+                            stock_name = code
+                            try:
+                                if not is_intl:
+                                    contract = self.api.Contracts.Stocks.get(code)
+                                    if contract and hasattr(contract, "name"):
+                                        stock_name = contract.name
+                            except Exception:
+                                pass
 
-                        real_positions.append({
-                            "ticker": code,
-                            "name": stock_name,
-                            "market": "TW",
-                            "currency": "TWD",
-                            "trade_type": cond_str,
-                            "shares": shares,
-                            "lots": lots,
-                            "cost_price": price,
-                            "target_strategy": "5~7天高動能波段",
-                            "note": "永豐金 API 實盤同步庫存"
-                        })
+                            shares = qty * 1000 if (qty < 500 and not is_intl) else qty
+                            lots = qty if qty < 500 else int(qty // 1000)
+
+                            real_positions.append({
+                                "ticker": code,
+                                "name": stock_name,
+                                "market": "US_SUB" if is_intl else "TW",
+                                "currency": "USD" if is_intl else "TWD",
+                                "trade_type": cond_str,
+                                "shares": shares,
+                                "lots": lots,
+                                "cost_price": price,
+                                "target_strategy": "永豐金實盤庫存同步",
+                                "note": f"永豐金帳號 {getattr(acc, 'account_id', '')} 實盤同步"
+                            })
+                except Exception as acc_e:
+                    print(f"[帳號 {getattr(acc, 'account_id', '')} 庫存查詢提示]: {acc_e}")
+
         except Exception as e:
             print(f"[永豐金 API 實盤庫存查詢提示]: {e}")
         
         return real_positions
+
 
     def fetch_stock_quote(self, ticker: str) -> Dict[str, Any]:
         """
