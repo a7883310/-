@@ -884,7 +884,37 @@ with tab_portfolio:
                 else:
                     st.warning("請填寫股票代號！")
 
+    # 3. 庫存管理與資料備份工具箱 (一鍵清空 / 匯出備份 / 貼上還原)
+    with st.expander("📦 庫存備份與自訂管理工具箱 (一鍵清空 / 匯出備份 / 貼上還原)", expanded=False):
+        b_c1, b_c2 = st.columns(2)
+        with b_c1:
+            st.markdown("##### 📤 匯出持股備份 (JSON)")
+            st.caption("將您目前登記的真實庫存與成本匯出為文字，隨時可在任何裝置上一鍵還原：")
+            exp_json = pos_tracking_service.export_positions_json()
+            st.text_area("庫存備份代碼", value=exp_json, height=120, key="txt_export_pos_json")
+            
+            if st.button("🧹 一鍵清空所有在庫持股", key="btn_clear_all_pos", help="清空所有持股紀錄重新開始"):
+                pos_tracking_service.clear_all_positions()
+                st.success("已清空所有持股紀錄！")
+                st.rerun()
+
+        with b_c2:
+            st.markdown("##### 📥 匯入 / 還原持股備份")
+            st.caption("貼上之前備份的庫存 JSON 代碼，即可瞬間還原您的真實持股：")
+            imp_json = st.text_area("貼上備份代碼", placeholder='[{"ticker": "2330", "cost_price": 1050, "shares": 100, ...}]', height=120, key="txt_import_pos_json")
+            if st.button("📥 確認匯入並還原持股", key="btn_confirm_import_pos", width="stretch"):
+                if imp_json.strip():
+                    ok, msg = pos_tracking_service.import_positions_json(imp_json.strip())
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+                else:
+                    st.warning("請先貼上備份代碼！")
+
     st.markdown("---")
+
 
     # 3. 庫存持股量化總覽表格 (Data Table View)
     if active_positions:

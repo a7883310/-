@@ -24,37 +24,10 @@ class PositionTrackingService:
         self._ensure_positions_file()
 
     def _ensure_positions_file(self):
-        """確保庫存紀錄檔案存在，若無則建立預設示範組合"""
+        """確保庫存紀錄檔案存在，預設為乾淨空清單（不塞入任何假資料）"""
         if not POSITIONS_FILE.exists():
-            default_positions = [
-                {
-                    "ticker": "2454",
-                    "name": "聯發科",
-                    "market": "TW",
-                    "currency": "TWD",
-                    "cost_price": 1380.0,
-                    "shares": 100,  # 零股 100 股
-                    "buy_date": (get_tw_now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d"),
-                    "target_gain_pct": 10.5,
-                    "stop_loss_pct": 4.0,
-                    "target_strategy": "5~7天高動能波段 (ASIC 晶片催化)",
-                    "source": "手動登記"
-                },
-                {
-                    "ticker": "NVDA",
-                    "name": "輝達 (NVIDIA)",
-                    "market": "US_SUB",
-                    "currency": "USD",
-                    "cost_price": 178.5,
-                    "shares": 10,
-                    "buy_date": (get_tw_now() - datetime.timedelta(days=3)).strftime("%Y-%m-%d"),
-                    "target_gain_pct": 12.0,
-                    "stop_loss_pct": 4.5,
-                    "target_strategy": "5~7天高動能波段 (Blackwell 伺服器放量)",
-                    "source": "手動登記"
-                }
-            ]
-            self.save_positions(default_positions)
+            self.save_positions([])
+
 
     def load_positions(self) -> List[Dict[str, Any]]:
         """讀取目前所有登記中的波段持股庫存"""
@@ -156,6 +129,27 @@ class PositionTrackingService:
         positions = self.load_positions()
         filtered = [p for p in positions if p["ticker"].upper() != ticker.strip().upper()]
         return self.save_positions(filtered)
+
+    def clear_all_positions(self) -> bool:
+        """一鍵清空所有持股庫存紀錄"""
+        return self.save_positions([])
+
+    def export_positions_json(self) -> str:
+        """匯出庫存 JSON 字串供備份"""
+        positions = self.load_positions()
+        return json.dumps(positions, ensure_ascii=False, indent=2)
+
+    def import_positions_json(self, json_str: str) -> Tuple[bool, str]:
+        """從 JSON 字串匯入庫存"""
+        try:
+            data = json.loads(json_str)
+            if isinstance(data, list):
+                self.save_positions(data)
+                return True, f"成功匯入 {len(data)} 筆持股部位！"
+            return False, "匯入失敗：JSON 格式必須為陣列清單。"
+        except Exception as e:
+            return False, f"匯入解析失敗：{e}"
+
 
     def calculate_live_position_plan(self, pos: Dict[str, Any]) -> Dict[str, Any]:
         """
