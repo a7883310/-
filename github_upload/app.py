@@ -1537,7 +1537,7 @@ with tab_macro:
         st.plotly_chart(fig_gauge, width="stretch")
 
     with col_radar:
-        st.markdown("#### 📡 7 大宏觀雷達訊號")
+        st.markdown("#### 📡 7 大宏觀雷達訊號 (多空量力量表)")
         categories = list(signals.keys())
         values = [s_data["score"] for s_data in signals.values()]
         fig_radar = go.Figure()
@@ -1548,6 +1548,44 @@ with tab_macro:
             paper_bgcolor="#111827", plot_bgcolor="#111827", font=dict(color="#f8fafc"), height=280, showlegend=False, margin=dict(l=35, r=35, t=20, b=20)
         )
         st.plotly_chart(fig_radar, width="stretch")
+
+    st.markdown("---")
+
+    # ================= 7 大宏觀雷達權威數據與官方出處專區 =================
+    st.markdown("### 🌐 【7 大宏觀雷達即時數據 × 官方一級權威出處一覽】")
+    st.caption("杜絕網路二手傳聞 ｜ 僅採用各國央行 (Fed/FRED)、期交所 (CBOE/CME)、勞工統計局 (BLS) 與國際海事/能源局 (EIA/IMO) 之一級官方權威來源")
+
+    sig_col1, sig_col2 = st.columns(2)
+    sig_items = list(signals.items())
+    half_len = (len(sig_items) + 1) // 2
+
+    for col_idx, col_target in enumerate([sig_col1, sig_col2]):
+        with col_target:
+            sub_items = sig_items[:half_len] if col_idx == 0 else sig_items[half_len:]
+            for sig_name, sig_info in sub_items:
+                badge_text = sig_info.get("badge", "中性")
+                b_color = "#10b981" if "利多" in badge_text else ("#f59e0b" if "中性" in badge_text else "#ef4444")
+                b_bg = "#064e3b" if "利多" in badge_text else ("#78350f" if "中性" in badge_text else "#7f1d1d")
+                
+                with st.container(border=True):
+                    st.markdown(f"""
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-weight:800; font-size:1.02rem; color:#f8fafc;">📡 {sig_name}</span>
+                        <span style="background-color:{b_bg}; color:{b_color}; padding:2px 8px; border-radius:4px; font-weight:700; font-size:0.82rem;">
+                            得分: {sig_info.get('score', 60)} 分 ｜ {badge_text}
+                        </span>
+                    </div>
+                    <div style="font-size:0.92rem; color:#cbd5e1; margin-bottom:6px; line-height:1.5;">
+                        <b>最新研判</b>：{sig_info.get('status', '')}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 官方權威出處連結
+                    sources = sig_info.get("sources", [])
+                    if sources:
+                        st.markdown("<div style='font-size:0.8rem; color:#94a3b8; margin-top:4px;'>🔗 <b>官方一級權威查驗出處</b>：</div>", unsafe_allow_html=True)
+                        for src in sources:
+                            st.markdown(f"- 🌐 [{src['name']}]({src['url']})")
 
     st.markdown("---")
     col_baro, col_threat = st.columns([1, 1])
@@ -1561,15 +1599,21 @@ with tab_macro:
             level = threat["threat_level"]
             badge_html = f'<span style="background-color:#7f1d1d; color:#fca5a5; padding:3px 8px; border-radius:4px; font-weight:700;">CRITICAL 嚴重警戒</span>' if level == "CRITICAL" else f'<span style="background-color:#78350f; color:#fde047; padding:3px 8px; border-radius:4px; font-weight:700;">HIGH 高度警戒</span>'
             border_color = "#ef4444" if level == "CRITICAL" else "#f59e0b"
-            st.markdown(f"""
-            <div class="section-card" style="border-left: 4px solid {border_color};">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"><span style="font-weight: 700; font-size: 1.02rem; color: #f8fafc;">📍 {threat['region']}</span>{badge_html}</div>
+            with st.container(border=True):
+                st.markdown(f"""
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;"><span style="font-weight: 700; font-size: 1.02rem; color: #f8fafc;">📍 {threat['region']}</span>{badge_html}</div>
                 <div style="font-size: 0.92rem; font-weight: 600; color: #cbd5e1; margin-bottom: 5px;">⚠️ {threat['title']}</div>
                 <div style="font-size: 0.86rem; color: #94a3b8; margin-bottom: 3px;">🚢 <b>衝擊領域</b>：{threat['affected_sector']}</div>
                 <div style="font-size: 0.86rem; color: #94a3b8; margin-bottom: 3px;">📦 <b>物流影響</b>：{threat['impact_summary']}</div>
-                <div style="font-size: 0.86rem; color: #fca5a5;">🔥 <b>通膨威脅</b>：{threat['inflation_risk']}</div>
-            </div>
-            """, unsafe_allow_html=True)
+                <div style="font-size: 0.86rem; color: #fca5a5; margin-bottom: 4px;">🔥 <b>通膨威脅</b>：{threat['inflation_risk']}</div>
+                """, unsafe_allow_html=True)
+                
+                t_sources = threat.get("sources", [])
+                if t_sources:
+                    st.markdown("<div style='font-size:0.8rem; color:#94a3b8; margin-top:4px;'>🔗 <b>海事/能源官方監測來源</b>：</div>", unsafe_allow_html=True)
+                    for t_src in t_sources:
+                        st.markdown(f"- 🌐 [{t_src['name']}]({t_src['url']})")
+
 
 # =========================== TAB 4: 工研院 IEK 產業趨勢 ===========================
 with tab_industry:

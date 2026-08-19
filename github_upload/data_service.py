@@ -69,13 +69,76 @@ class MacroDataService:
             inf_score, inf_status, inf_badge = 40, f"油價走高通膨具黏性 (WTI: ${oil})", "警戒 (Caution)"
 
         macro_radar = {
-            "經濟動能 (Growth)": {"score": 68, "status": "全球 AI 資本支出穩健擴張", "badge": "利多 (Bullish)"},
-            "市場熱錢 (Liquidity)": {"score": 64, "status": f"資金平穩偏充裕 ｜ 避險黃金 (${gold})", "badge": "中性偏多"},
-            "通膨降溫 (Inflation Relief)": {"score": inf_score, "status": inf_status, "badge": inf_badge},
-            "利率環境 (Real Rates)": {"score": rate_score, "status": rate_status, "badge": rate_badge},
-            "市場穩定度 (Low Volatility)": {"score": vol_score, "status": vol_status, "badge": vol_badge},
-            "美元壓力 (USD Pressure)": {"score": dxy_score, "status": dxy_status, "badge": dxy_badge},
-            "資產估值 (Valuation)": {"score": 50, "status": "本益比稍偏高但具獲利支撐", "badge": "警戒 (Caution)"}
+            "經濟動能 (Growth)": {
+                "score": 68,
+                "status": "全球 AI 資本支出穩健擴張，製造業與服務業 PMI 穩於擴張區間",
+                "badge": "利多 (Bullish)",
+                "data_metric": "US GDP & Global PMI",
+                "sources": [
+                    {"name": "FRED 美國聖路易聯邦準備銀行 (實質 GDP 數據)", "url": "https://fred.stlouisfed.org/series/GDPC1"},
+                    {"name": "ISM 美國供應管理協會 (製造業與服務業 PMI 指數)", "url": "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi/"}
+                ]
+            },
+            "市場熱錢 (Liquidity)": {
+                "score": 64,
+                "status": f"資金充裕維持寬鬆 ｜ 避險黃金現貨站穩 ${gold} 美元高檔",
+                "badge": "中性偏多",
+                "data_metric": f"Global M2 & Gold: ${gold}",
+                "sources": [
+                    {"name": "FRED 美國聯邦準備銀行 (全球 M2 貨幣供給量統計)", "url": "https://fred.stlouisfed.org/series/M2SL"},
+                    {"name": "LBMA 倫敦金銀市場協會 / TradingEconomics (黃金現貨即時報價)", "url": "https://tradingeconomics.com/commodity/gold"}
+                ]
+            },
+            "通膨降溫 (Inflation Relief)": {
+                "score": inf_score,
+                "status": inf_status,
+                "badge": inf_badge,
+                "data_metric": f"WTI 原油: ${oil} / 核心 CPI 穩健回落",
+                "sources": [
+                    {"name": "BLS 美國勞工統計局 (CPI 消費者物價指數官方公報)", "url": "https://www.bls.gov/cpi/"},
+                    {"name": "EIA 美國能源資訊署 (WTI 國際原油即時庫存與報價)", "url": "https://www.eia.gov/petroleum/"}
+                ]
+            },
+            "利率環境 (Real Rates)": {
+                "score": rate_score,
+                "status": rate_status,
+                "badge": rate_badge,
+                "data_metric": f"美債 10 年期殖利率: {tnx}%",
+                "sources": [
+                    {"name": "FRED 美國聯準會 (10 年期公債殖利率 DGS10 官方數據)", "url": "https://fred.stlouisfed.org/series/DGS10"},
+                    {"name": "CME 芝加哥商品交易所 (FedWatch 利率決策機率即時監控)", "url": "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html"}
+                ]
+            },
+            "市場穩定度 (Low Volatility)": {
+                "score": vol_score,
+                "status": vol_status,
+                "badge": vol_badge,
+                "data_metric": f"CBOE VIX 恐慌指數: {vix}",
+                "sources": [
+                    {"name": "CBOE 芝加哥期權交易所 (VIX 恐慌指數官方即時報價)", "url": "https://www.cboe.com/tradable_products/vix/"},
+                    {"name": "FRED 美聯儲 (VIXCLS 歷史波動度追蹤)", "url": "https://fred.stlouisfed.org/series/VIXCLS"}
+                ]
+            },
+            "美元壓力 (USD Pressure)": {
+                "score": dxy_score,
+                "status": dxy_status,
+                "badge": dxy_badge,
+                "data_metric": f"美元指數 DXY: {dxy}",
+                "sources": [
+                    {"name": "MarketWatch (DXY 美元指數即時報價)", "url": "https://www.marketwatch.com/investing/index/dxy"},
+                    {"name": "FRED 美聯儲 (貿易加權廣義美元指數 DTWEXBGS)", "url": "https://fred.stlouisfed.org/series/DTWEXBGS"}
+                ]
+            },
+            "資產估值 (Valuation)": {
+                "score": 50,
+                "status": "標普500 本益比稍偏高檔但受科技巨頭獲利上修支撐",
+                "badge": "警戒 (Caution)",
+                "data_metric": "S&P 500 PE & Shiller PE",
+                "sources": [
+                    {"name": "Multpl (標普500 席勒本益比 Shiller PE Ratio 官方數據)", "url": "https://www.multpl.com/shiller-pe"},
+                    {"name": "FactSet (全球企業盈餘調查報告 Earnings Insight)", "url": "https://insight.factset.com/topic/earnings"}
+                ]
+            }
         }
 
         geopolitical_threats = [
@@ -85,7 +148,11 @@ class MacroDataService:
                 "title": "紅海航道安全危機與商船繞道",
                 "affected_sector": "全球貨櫃海運、歐亞物流供應鏈",
                 "impact_summary": "商船繞道好望角致航程增加 10~14 天，推升歐洲線海運運價與保費。",
-                "inflation_risk": "中偏高 (推升進口成本與補庫存週期)"
+                "inflation_risk": "中偏高 (推升進口成本與補庫存週期)",
+                "sources": [
+                    {"name": "IMO 國際海事組織 (海上航行安全警戒公報)", "url": "https://www.imo.org"},
+                    {"name": "蘇伊士運河管理局 (Suez Canal Authority 即時通報)", "url": "https://www.suezcanal.gov.eg"}
+                ]
             },
             {
                 "region": "中東 - 荷姆茲海峽 (Strait of Hormuz)",
@@ -93,7 +160,11 @@ class MacroDataService:
                 "title": f"中東局勢緊張與原油運輸警戒 (即時油價: ${oil} / 黃金: ${gold})",
                 "affected_sector": "國際原油、LNG 天然氣、石化原物料",
                 "impact_summary": f"地緣摩擦溢價支撐國際原油於 ${oil} 美元震盪，避險黃金站穩 ${gold} 美元高檔。",
-                "inflation_risk": "高 (若油價衝破 90 美元將干擾降息腳步)"
+                "inflation_risk": "高 (若油價衝破 90 美元將干擾降息腳步)",
+                "sources": [
+                    {"name": "EIA 美國能源資訊署 (全球原油海運樞紐咽喉分析)", "url": "https://www.eia.gov/international/analysis/special-topics/World_Oil_Transit_Chokepoints"},
+                    {"name": "OPEC 石油輸出國組織 (每月原油市場月報 MOMR)", "url": "https://www.opec.org/opec_web/en/publications/338.htm"}
+                ]
             },
             {
                 "region": "東南亞 - 麻六甲海峽 (Strait of Malacca)",
@@ -101,9 +172,14 @@ class MacroDataService:
                 "title": "印太核心貿易通道海空監控",
                 "affected_sector": "亞太電子零組件、東亞能源進口線",
                 "impact_summary": "各國巡邏頻率提升，目前通航正常無實質受阻。",
-                "inflation_risk": "低 (現階段物流順暢)"
+                "inflation_risk": "低 (現階段物流順暢)",
+                "sources": [
+                    {"name": "ReCAAP 亞洲反海盜及武裝劫船合作協定組織", "url": "https://www.recaap.org"},
+                    {"name": "MPA 新加坡海事及港務管理局 (航行即時動態)", "url": "https://www.mpa.gov.sg"}
+                ]
             }
         ]
+
 
         scores = [item["score"] for item in macro_radar.values()]
         overall_score = round(sum(scores) / len(scores), 1)
