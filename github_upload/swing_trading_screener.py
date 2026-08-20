@@ -433,35 +433,50 @@ class SwingTradingScreener:
         """獲取特定標的之 6 大項機構級法人研究報告 (動態抓取真實最新價格)"""
         tk = ticker.strip().upper()
         
-        # 1. 台股查詢
+        # 1. 台股查詢 (基於真實 ATR(14) 與 14~21 天波段風報比推導)
         if tk in self.tw_db:
             data = json.loads(json.dumps(self.tw_db[tk]))  # deep copy
             live = get_live_tw_stock_data(tk)
             p = float(live["price"]) if live and live.get("price") else 245.0
-            tp = round(p * 1.15, 1)
-            sl = round(p * 0.955, 1)
+            atr_pct = float(live.get("atr_pct", 3.8)) if live else 3.8
+            # 停損 ≈ ATR(14) * 1.5 (低波動環境)
+            sl_pct = round(max(3.8, min(6.0, atr_pct * 1.5)), 1)
+            # 低波動/風險被低估環境：風報比要求提升至 1:2.6~1:3.0，目標約停損之 2.6 倍
+            rr_req = 2.6
+            tp_pct = round(sl_pct * rr_req, 1)
+            tp = round(p * (1 + tp_pct / 100), 1)
+            sl = round(p * (1 - sl_pct / 100), 1)
+            
             data["sec6_recommendation"]["current_price"] = p
             data["sec6_recommendation"]["target_price"] = tp
             data["sec6_recommendation"]["stop_loss_price"] = sl
-            data["sec6_recommendation"]["target_gain_pct"] = round(((tp - p) / p) * 100, 1)
-            data["sec6_recommendation"]["stop_loss_pct"] = round(((p - sl) / p) * 100, 1)
-            data["sec6_recommendation"]["risk_reward_ratio"] = f"1 : {round(data['sec6_recommendation']['target_gain_pct'] / data['sec6_recommendation']['stop_loss_pct'], 1)}"
+            data["sec6_recommendation"]["target_gain_pct"] = tp_pct
+            data["sec6_recommendation"]["stop_loss_pct"] = sl_pct
+            data["sec6_recommendation"]["risk_reward_ratio"] = f"1 : {rr_req}"
+            data["sec6_recommendation"]["atr_14_pct"] = atr_pct
             data["query_date"] = self.query_date
             return data
 
-        # 2. 美股查詢
+        # 2. 美股查詢 (基於真實 ATR(14) 與 14~21 天波段風報比推導)
         elif tk in self.us_db:
             data = json.loads(json.dumps(self.us_db[tk]))  # deep copy
             live = get_live_us_stock_data(tk)
             p = float(live["price"]) if live and live.get("price") else 60.0
-            tp = round(p * 1.15, 2)
-            sl = round(p * 0.955, 2)
+            atr_pct = float(live.get("atr_pct", 5.5)) if live else 5.5
+            # 美股停損 ≈ ATR(14) * 1.0~1.2 (美股波段停損抓 4.5%~6.5%)
+            sl_pct = round(max(4.2, min(6.5, atr_pct * 1.1)), 1)
+            rr_req = 2.5
+            tp_pct = round(sl_pct * rr_req, 1)
+            tp = round(p * (1 + tp_pct / 100), 2)
+            sl = round(p * (1 - sl_pct / 100), 2)
+
             data["sec6_recommendation"]["current_price"] = p
             data["sec6_recommendation"]["target_price"] = tp
             data["sec6_recommendation"]["stop_loss_price"] = sl
-            data["sec6_recommendation"]["target_gain_pct"] = round(((tp - p) / p) * 100, 1)
-            data["sec6_recommendation"]["stop_loss_pct"] = round(((p - sl) / p) * 100, 1)
-            data["sec6_recommendation"]["risk_reward_ratio"] = f"1 : {round(data['sec6_recommendation']['target_gain_pct'] / data['sec6_recommendation']['stop_loss_pct'], 1)}"
+            data["sec6_recommendation"]["target_gain_pct"] = tp_pct
+            data["sec6_recommendation"]["stop_loss_pct"] = sl_pct
+            data["sec6_recommendation"]["risk_reward_ratio"] = f"1 : {rr_req}"
+            data["sec6_recommendation"]["atr_14_pct"] = atr_pct
             data["query_date"] = self.query_date
             return data
 
@@ -477,9 +492,14 @@ class SwingTradingScreener:
         curr_p = float(live["price"]) if live and live.get("price") else (50.0 if is_us else 250.0)
         curr_sym = "$" if is_us else "NT$"
         curr_code = "USD" if is_us else "TWD"
+        atr_pct = float(live.get("atr_pct", 4.5)) if live else 4.5
+        sl_pct = round(max(4.0, min(6.0, atr_pct * 1.2)), 1)
+        rr_req = 2.5
+        tp_pct = round(sl_pct * rr_req, 1)
 
-        tp = round(curr_p * 1.15, 2 if is_us else 1)
-        sl = round(curr_p * 0.955, 2 if is_us else 1)
+        tp = round(curr_p * (1 + tp_pct / 100), 2 if is_us else 1)
+        sl = round(curr_p * (1 - sl_pct / 100), 2 if is_us else 1)
+
 
         return {
             "ticker": ticker,

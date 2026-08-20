@@ -78,6 +78,18 @@ def get_live_tw_stock_data(ticker: str) -> Optional[Dict[str, Any]]:
                 else:
                     rsi_14 = 85.0
 
+            # 真實 ATR(14) 精算
+            tr_list = []
+            for i in range(1, len(valid_closes)):
+                h = valid_highs[i] if i < len(valid_highs) else valid_closes[i]
+                l = valid_lows[i] if i < len(valid_lows) else valid_closes[i]
+                pc = valid_closes[i-1]
+                tr = max(h - l, abs(h - pc), abs(l - pc))
+                tr_list.append(tr)
+
+            atr_14 = round(float(np.mean(tr_list[-14:])), 2) if len(tr_list) >= 14 else round(current_price * 0.035, 2)
+            atr_pct = round((atr_14 / max(current_price, 0.01)) * 100, 2)
+
             # 最新成交量 (股數轉為張數，1 張 = 1000 股)
             latest_vol = valid_vols[-1] if valid_vols else 2500000
             if latest_vol > 50000:
@@ -97,10 +109,13 @@ def get_live_tw_stock_data(ticker: str) -> Optional[Dict[str, Any]]:
                 "high_60d": high_60d,
                 "pullback_pct": pullback_pct,
                 "rsi_14": rsi_14,
+                "atr_14": atr_14,
+                "atr_pct": atr_pct,
                 "volume": latest_vol,
                 "volume_lots": volume_lots,
                 "turnover_wan": turnover_wan
             }
+
         except Exception:
             continue
 
@@ -169,6 +184,20 @@ def get_live_us_stock_data(ticker: str) -> Optional[Dict[str, Any]]:
             else:
                 rsi_14 = 85.0
 
+        # 美股真實 ATR(14) 精算
+        low_list = indicators.get("low", [])
+        valid_lows = [l for l in low_list if l is not None]
+        tr_list = []
+        for i in range(1, len(valid_closes)):
+            h = valid_highs[i] if i < len(valid_highs) else valid_closes[i]
+            l = valid_lows[i] if i < len(valid_lows) else valid_closes[i]
+            pc = valid_closes[i-1]
+            tr = max(h - l, abs(h - pc), abs(l - pc))
+            tr_list.append(tr)
+
+        atr_14 = round(float(np.mean(tr_list[-14:])), 2) if len(tr_list) >= 14 else round(current_price * 0.045, 2)
+        atr_pct = round((atr_14 / max(current_price, 0.01)) * 100, 2)
+
         latest_vol = int(valid_vols[-1]) if valid_vols else 15000000
         turnover_wan_usd = round((latest_vol * current_price) / 10000.0, 1)
 
@@ -183,9 +212,12 @@ def get_live_us_stock_data(ticker: str) -> Optional[Dict[str, Any]]:
             "high_60d": high_60d,
             "pullback_pct": pullback_pct,
             "rsi_14": rsi_14,
+            "atr_14": atr_14,
+            "atr_pct": atr_pct,
             "volume_shares": latest_vol,
             "turnover_wan_usd": turnover_wan_usd
         }
+
     except Exception:
         return None
 
