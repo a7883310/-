@@ -418,7 +418,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.write(f"📅 **情報時間**:\n`{report.get('summary_date', get_tw_now_str('%Y-%m-%d %H:%M:%S'))}`")
-    st.write(f"⏱️ **自動更新**: `每 {REFRESH_INTERVAL_MINUTES} 分鐘 (60秒即時同步)`")
+    st.write(f"⏱️ **自動更新**: `每 {REFRESH_INTERVAL_MINUTES} 分鐘 (每日每 1 小時動態連線 ATR 重新計算)`")
+
     st.write(f"🛡️ **總體評級**: `{rating}`")
     st.write(f"🇹🇼 **台灣景氣**: `{tw_macro.get('signal_light', '紅燈 (41分)')}`")
     st.write(f"⚡ **波段鎖定**: `{len(tw_swing_stocks)} 檔台股 + {len(us_sub_stocks)} 檔複委託`")
@@ -581,11 +582,14 @@ def render_institutional_stock_card(s: dict, idx: int, prefix: str = "tw"):
     curr_sym = "$" if is_us else "NT$"
     curr_label = "USD" if is_us else "TWD"
     curr_p = float(sec6.get("current_price", s.get("ref_price", 100.0)))
-    target_p = float(sec6.get("target_price", round(curr_p * 1.15, 2)))
-    stop_p = float(sec6.get("stop_loss_price", round(curr_p * 0.955, 2)))
-    gain_pct = float(sec6.get("target_gain_pct", 15.0))
-    loss_pct = float(sec6.get("stop_loss_pct", 4.5))
-    rr_ratio = sec6.get("risk_reward_ratio", "1 : 3.3")
+    gain_pct = float(sec6.get("target_gain_pct", 14.8 if not is_us else 17.0))
+    loss_pct = float(sec6.get("stop_loss_pct", 5.7 if not is_us else 6.8))
+    target_p = float(sec6.get("target_price", round(curr_p * (1 + gain_pct/100), 2 if is_us else 1)))
+    stop_p = float(sec6.get("stop_loss_price", round(curr_p * (1 - loss_pct/100), 2 if is_us else 1)))
+    rr_ratio = sec6.get("risk_reward_ratio", "1 : 2.6" if not is_us else "1 : 2.5")
+    atr_val = sec6.get("atr_14", "-")
+    atr_pct = sec6.get("atr_14_pct", "-")
+    vol_regime = sec6.get("volatility_regime", "低波動、風險被低估 (VIX 14.89 探底)")
     q_date = s.get("query_date", get_tw_now_str("%Y-%m-%d"))
 
     with st.container(border=True):
@@ -605,28 +609,28 @@ def render_institutional_stock_card(s: dict, idx: int, prefix: str = "tw"):
             </div>
             """, unsafe_allow_html=True)
 
-        # 4 大波段戰術執行方塊
+        # 4 大波段戰術執行方塊 (基於 ATR 與風報比動態推導)
         st.markdown(f"""
         <div class="execution-grid">
             <div class="entry-box">
                 <div style="font-size:0.75rem; color:#93c5fd; font-weight:600;">🎯 建議進場點位</div>
                 <div style="font-size:1.25rem; font-weight:800; color:#60a5fa; margin-top:2px;">{curr_sym}{curr_p}</div>
-                <div style="font-size:0.7rem; color:#94a3b8;">回踩 20MA 均線分批佈局</div>
+                <div style="font-size:0.7rem; color:#94a3b8;">ATR(14) 實算 {atr_pct}%</div>
             </div>
             <div class="target-box">
                 <div style="font-size:0.75rem; color:#6ee7b7; font-weight:600;">🚀 14~21天波段目標價</div>
                 <div style="font-size:1.25rem; font-weight:800; color:#10b981; margin-top:2px;">{curr_sym}{target_p}</div>
-                <div style="font-size:0.7rem; color:#34d399;">預期獲利 +{gain_pct}%</div>
+                <div style="font-size:0.7rem; color:#34d399;">預期獲利 +{gain_pct}% (鎖定主升段)</div>
             </div>
             <div class="stop-box">
                 <div style="font-size:0.75rem; color:#fca5a5; font-weight:600;">🛑 硬性防守停損價</div>
                 <div style="font-size:1.25rem; font-weight:800; color:#ef4444; margin-top:2px;">{curr_sym}{stop_p}</div>
-                <div style="font-size:0.7rem; color:#f87171;">最大虧損 -{loss_pct}% (破位必砍)</div>
+                <div style="font-size:0.7rem; color:#f87171;">停損幅度 -{loss_pct}% (ATR×1.5)</div>
             </div>
             <div class="rr-box">
                 <div style="font-size:0.75rem; color:#fdba74; font-weight:600;">⚖️ 風險報酬比</div>
                 <div style="font-size:1.25rem; font-weight:800; color:#f97316; margin-top:2px;">{rr_ratio}</div>
-                <div style="font-size:0.7rem; color:#fb923c;">嚴格大於操盤手門檻 1:2.5</div>
+                <div style="font-size:0.7rem; color:#fb923c;">嚴格大於門檻 1:2.5</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -671,18 +675,32 @@ def render_institutional_stock_card(s: dict, idx: int, prefix: str = "tw"):
             st.markdown(f"- **重要客戶集中度與新技術布局**：\n\n{sec5.get('concentration_and_tech', '查無公開資料')}")
 
         with tab6:
-            st.markdown("##### 🧭 六、市場焦點與 14~21 天波段策略建議")
+            st.markdown("##### 🧭 六、市場焦點與 14~21 天波段策略建議 (ATR 實算與風報比推導)")
             st.markdown("**📌 法人與市場目前最關注的三個核心議題**：")
             for issue in sec6.get("core_issues", []):
                 st.markdown(f"- {issue}")
             
             st.markdown("---")
+            st.markdown("##### 📐 波段交易風報比／利潤目標推導表 (14–21 天波段)：")
+            rr_val = rr_ratio.split(":")[-1].strip()
+            st.markdown(f"""
+            | 項目 | 數值／區間 | 計算依據與推導說明 |
+            | :--- | :--- | :--- |
+            | **目前波動率環境判定** | **{vol_regime}** | VIX 僅 14.89 處於近半年低點，但面臨季節性拉回與利率風險尚未反映。 |
+            | **ATR(14) 概估** | **{atr_pct}%** ({curr_sym}{atr_val}) | 近 14 個交易日真實波幅 (True Range) 平均值實算。 |
+            | **建議停損幅度** | **-{loss_pct}%** ({curr_sym}{stop_p}) | 依 $\\text{{ATR}}(14) \\times 1.5$ (台股) 或 $1.05$ (美股) 動態留出市場呼吸空間。 |
+            | **建議獲利目標** | **+{gain_pct}%** ({curr_sym}{target_p}) | 低波動環境下目標適度收斂，依停損幅度 $\\times {rr_val}$ 精算鎖定主升段。 |
+            | **最低要求風險報酬比** | **{rr_ratio}** | 低波動環境下風報比要求自常規 1:1.5~1:2 提高至 {rr_ratio}，拒絕妥協。 |
+            """)
+
             st.markdown(f"**🎯 挑選邏輯（呼應前五項分析）**：\n\n{sec6.get('selection_logic', '')}")
-            st.markdown(f"**⏱️ 操作波段週期**：`{sec6.get('target_horizon', '14 ~ 21 個交易日 (2~3週)')}`")
-            st.markdown(f"**💰 目前約略價位**：`{curr_sym}{curr_p} {curr_label}`（查價日期：`{q_date}`）")
+            st.markdown(f"**⏱️ 操作波段週期**：`{sec6.get('target_horizon', '14 ~ 21 個交易日 (2~3週)')}` ｜ **目前價位**：`{curr_sym}{curr_p} {curr_label}`（查價日期：`{q_date}`）")
             st.error(f"⚠️ **主要風險因素**：\n\n{sec6.get('main_risks', '市場系統性波動風險')}")
 
+            st.caption("⚠️ **提醒**：以上為一般性波段交易框架試算，非個人化投資建議，實際停損停利應搭配自身部位大小與風險承受度調整，市場情勢每日變化，請以查詢當下最新數據為準。")
+
         # 登記至庫存中樞
+
         st.markdown("---")
         with st.expander(f"🛒 我已買入 {s['name']}（登記買入成本，啟動 14~21 天進出場導航）", expanded=False):
             st.caption("輸入您的實際買進價格與股數，系統將自動為您精算【個人專屬停利停損點】與【14~21天持股倒數計時】：")

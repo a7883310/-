@@ -29,9 +29,10 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 LATEST_REPORT_PATH = DATA_DIR / "latest_macro_report.json"
 HISTORY_REPORT_PATH = DATA_DIR / "report_history.json"
 
-# 排程設定 (預設每日 08:30 發送早報，且每 1 分鐘高頻自動刷新數據與地緣戰報)
+# 排程設定 (預設每日 08:30 發送早報，且每 1 個小時 (60分鐘) 自動刷新數據與 ATR 波段點位)
 SCHEDULE_TIME = os.getenv("SCHEDULE_TIME", "08:30")
-REFRESH_INTERVAL_MINUTES = int(os.getenv("REFRESH_INTERVAL_MINUTES", "1"))
+REFRESH_INTERVAL_MINUTES = int(os.getenv("REFRESH_INTERVAL_MINUTES", "60"))
+
 
 # 永豐金證券 (SinoPac Shioaji API) 金鑰與憑證設定
 SHIOAJI_API_KEY = os.getenv("SHIOAJI_API_KEY", "")
