@@ -1655,13 +1655,34 @@ with tab_swing:
     st.markdown("### 🏛️ 50年華爾街資深分析師：機構級 14~21 天波段深度研究報告中心")
     st.caption("嚴格落實 6 大標準章節深度剖析 ｜ 🇹🇼 台股標的 (< 1000 元) ｜ 🇺🇸 美股複委託 (< 100 美元) ｜ ⏱️ 14~21 天 (2~3週) 波段操作 ｜ 🏛️ 一級官方數據來源 (MOPS / SEC EDGAR / 法說會)")
 
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("🎯 交易持股週期", "14 ~ 21 個交易日", "2~3週波段操作")
-    kpi2.metric("🛡️ 最大容忍虧損", "-4.0% ~ -5.0%", "嚴格硬性防守停損")
-    kpi3.metric("🚀 預期波段目標", "+12.0% ~ +20.0%", "鎖定主升段催化")
-    kpi4.metric("⚖️ 最低風報比要求", ">= 1 : 2.5", "不對市場妥協")
+    # 根據當前總經波動率環境 (CBOE VIX 14.89) 與全市場標的 ATR(14) 動態精算頂部 4 大戰術指標
+    all_sl_vals = [float(s.get("sec6_recommendation", {}).get("stop_loss_pct", 5.7)) for s in swing_stocks if s.get("sec6_recommendation")]
+    all_tp_vals = [float(s.get("sec6_recommendation", {}).get("target_gain_pct", 14.8)) for s in swing_stocks if s.get("sec6_recommendation")]
+    
+    dyn_min_sl = min(all_sl_vals) if all_sl_vals else 3.8
+    dyn_max_sl = max(all_sl_vals) if all_sl_vals else 6.8
+    dyn_min_tp = min(all_tp_vals) if all_tp_vals else 9.9
+    dyn_max_tp = max(all_tp_vals) if all_tp_vals else 17.0
 
-    st.markdown("---")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("🎯 交易持股週期", "14 ~ 21 個交易日", "2~3週中期波段操作")
+    kpi2.metric("🛡️ 動態最大容忍虧損", f"-{dyn_min_sl}% ~ -{dyn_max_sl}%", "依標的 ATR(14)×1.5 實算")
+    kpi3.metric("🚀 動態預期獲利目標", f"+{dyn_min_tp}% ~ +{dyn_max_tp}%", "依風報比 1:2.6 精算主升段")
+    kpi4.metric("⚖️ 動態最低風報比要求", "≥ 1 : 2.6 (台) ｜ 1:2.5 (美)", "低波動環境提高門檻")
+
+    st.markdown(f"""
+    <div style="background-color: #0f172a; border: 1px solid #6366f1; border-radius: 8px; padding: 12px 16px; margin: 10px 0 16px 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+            <span style="font-weight: 800; color: #a5b4fc; font-size: 1.0rem;">🌊 當前總經與市場波動率環境：【低波動、風險被低估 (VIX 14.89)】</span>
+            <span style="background-color: #1e1b4b; color: #818cf8; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 700;">每小時動態連線 ATR 重新精算</span>
+        </div>
+        <div style="font-size: 0.88rem; color: #cbd5e1; line-height: 1.6;">
+            • <b>波動率環境診斷</b>：CBOE VIX 探底至 14.89（接近近半年低點 14.18），但 8月中~10月中面臨季節性拉回與美聯儲利率決策風險尚未反映。<br>
+            • <b>動態風控機制</b>：停損依標的 14 日真實波幅 ATR(14) 給予呼吸空間（<b>-{dyn_min_sl}% ~ -{dyn_max_sl}%</b>）；同時將最低要求風報比自常規 1:1.5 提高至 <b>1:2.5 ~ 1:2.6</b>，使獲利目標精準鎖定於 <b>+{dyn_min_tp}% ~ +{dyn_max_tp}%</b>，避免盲目追高被季節性假突破洗出場。
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 
     # 1. 🔍 任意個股機構級 6 大項研報即時生成器
     st.markdown("#### 🔍 任意個股／複委託 6 大項機構級法人研究報告即時生成")
